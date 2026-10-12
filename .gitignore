@@ -1,0 +1,7 @@
+# Keil MDK 构建产物与本地文件（源码、驱动、工程文件都会保留）
+Objects/
+Listings/
+*.build_log.htm
+*.uvguix.*
+*.bak
+*.dep
