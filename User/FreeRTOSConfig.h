@@ -81,7 +81,7 @@
 #endif
 
 //断言
-#define vAssertCalled(char,int) printf("Error:%s,%d\r\n",char,int)
+#define vAssertCalled(char,int)   do { printf("Error:%s,%d\r\n",char,int); __disable_irq(); for(;;){} } while(0)
 #define configASSERT(x) if((x)==0) vAssertCalled(__FILE__,__LINE__)
 
 /************************************************************************
@@ -141,7 +141,7 @@
 #define configTICK_RATE_HZ						  (( TickType_t )1000)
 
 //可使用的最大优先级
-#define configMAX_PRIORITIES					  (32)
+#define configMAX_PRIORITIES                      (32)
 
 //空闲任务使用的堆栈大小
 #define configMINIMAL_STACK_SIZE				((unsigned short)128)
@@ -162,13 +162,13 @@
 #define configUSE_TASK_NOTIFICATIONS    1   
 
 //使用互斥信号量
-#define configUSE_MUTEXES						    0    
+#define configUSE_MUTEXES						    1    
 
 //使用递归互斥信号量                                            
 #define configUSE_RECURSIVE_MUTEXES			0   
 
 //为1时使用计数信号量
-#define configUSE_COUNTING_SEMAPHORES		0
+#define configUSE_COUNTING_SEMAPHORES		1
 
 /* 设置可以注册的信号量和消息队列个数 */
 #define configQUEUE_REGISTRY_SIZE				10                                 
@@ -184,7 +184,7 @@
 //支持静态内存
 #define configSUPPORT_STATIC_ALLOCATION					0					
 //系统所有总的堆大小
-#define configTOTAL_HEAP_SIZE					((size_t)(36*1024))    
+#define configTOTAL_HEAP_SIZE					((size_t)(48*1024))    
 
 
 /***************************************************************
@@ -215,13 +215,13 @@
 #define configUSE_TICK_HOOK						0           
 
 //使用内存申请失败钩子函数
-#define configUSE_MALLOC_FAILED_HOOK			0 
+#define configUSE_MALLOC_FAILED_HOOK			1 
 
 /*
  * 大于0时启用堆栈溢出检测功能，如果使用此功能 
  * 用户必须提供一个栈溢出钩子函数，如果使用的话
  * 此值可以为1或者2，因为有两种栈溢出检测方法 */
-#define configCHECK_FOR_STACK_OVERFLOW			0   
+#define configCHECK_FOR_STACK_OVERFLOW			2   
 
 
 /********************************************************************
@@ -230,7 +230,7 @@
 //启用运行时间统计功能
 #define configGENERATE_RUN_TIME_STATS	        0             
  //启用可视化跟踪调试
-#define configUSE_TRACE_FACILITY				      0    
+#define configUSE_TRACE_FACILITY				      1    
 /* 与宏configUSE_TRACE_FACILITY同时为1时会编译下面3个函数
  * prvWriteNameToBuffer()
  * vTaskList(),
@@ -252,9 +252,9 @@
                 FreeRTOS与软件定时器有关的配置选项      
 **********************************************************************/
  //启用软件定时器
-#define configUSE_TIMERS				            0                              
+#define configUSE_TIMERS				            1                              
 //软件定时器优先级
-#define configTIMER_TASK_PRIORITY		        (configMAX_PRIORITIES-1)        
+#define configTIMER_TASK_PRIORITY              ( 2 )    /* 定时器服务任务优先级=2：不抢业务任务 */
 //软件定时器队列长度
 #define configTIMER_QUEUE_LENGTH		        10                               
 //软件定时器任务堆栈大小
@@ -274,7 +274,7 @@
 #define INCLUDE_eTaskGetState			           1
 #define INCLUDE_xTimerPendFunctionCall	     0
 //#define INCLUDE_xTaskGetCurrentTaskHandle       1
-//#define INCLUDE_uxTaskGetStackHighWaterMark     0
+#define INCLUDE_uxTaskGetStackHighWaterMark     1
 //#define INCLUDE_xTaskGetIdleTaskHandle          0
 
 
@@ -306,7 +306,6 @@
 
 /* 以下为使用Percepio Tracealyzer需要的东西，不需要时将 configUSE_TRACE_FACILITY 定义为 0 */
 #if ( configUSE_TRACE_FACILITY == 1 )
-#include "trcRecorder.h"
 #define INCLUDE_xTaskGetCurrentTaskHandle               1   // 启用一个可选函数（该函数被 Trace源码使用，默认该值为0 表示不用）
 #endif
 

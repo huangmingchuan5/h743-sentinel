@@ -22,6 +22,8 @@
 #include "stm32h7xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "FreeRTOS.h"
+#include "task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -60,6 +62,8 @@ extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim7;
 
 /* USER CODE BEGIN EV */
+
+extern void xPortSysTickHandler(void);   /* FreeRTOS port.c 提供，SysTick 节拍入口 */
 
 /* USER CODE END EV */
 
@@ -163,7 +167,12 @@ void DebugMon_Handler(void)
 void SysTick_Handler(void)
 {
   /* USER CODE BEGIN SysTick_IRQn 0 */
-
+#if (INCLUDE_xTaskGetSchedulerState == 1)
+  if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+#endif
+  {
+    xPortSysTickHandler();      /* SysTick 归 FreeRTOS 当系统节拍 */
+  }
   /* USER CODE END SysTick_IRQn 0 */
 
   /* USER CODE BEGIN SysTick_IRQn 1 */

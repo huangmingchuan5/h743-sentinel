@@ -614,6 +614,11 @@
               <FileType>1</FileType>
               <FilePath>..\App\log\log.c</FilePath>
             </File>
+            <File>
+              <FileName>app_freertos_hooks.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\app_freertos_hooks.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
