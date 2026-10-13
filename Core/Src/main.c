@@ -33,6 +33,8 @@
 #include "bsp_qspi_flash.h"
 #include "log.h"
 #include "bsp_led.h"
+#include "FreeRTOS.h"
+#include "task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -60,6 +62,9 @@
 void SystemClock_Config(void);
 static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
+
+static void LedTask(void *argument);
+static void MonTask(void *argument);
 
 /* USER CODE END PFP */
 
@@ -166,12 +171,25 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  /* ---- Step 3：创建两个验证任务，然后启动调度器 ---- */
+  if (xTaskCreate(LedTask, "LED", 128u, NULL, 2u, NULL) != pdPASS)
+  {
+    printf("rtos   : create LED task failed\r\n");
+  }
+  if (xTaskCreate(MonTask, "MON", 256u, NULL, 2u, NULL) != pdPASS)
+  {
+    printf("rtos   : create MON task failed\r\n");
+  }
+
+  printf("rtos   : starting scheduler...\r\n");
+  vTaskStartScheduler();
+
+  /* 正常情况不会到这里；只有堆不足、连 Idle/定时器任务都建不起来时才会返回 */
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    Console_Task();
   }
   /* USER CODE END 3 */
 }
@@ -235,6 +253,64 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+/**
+  * @brief  Step 3 验证任务①：LED 心跳。
+  *         每 500 ms 在"绿呼吸"和"熄灭"之间翻转一次，肉眼确认调度器在周期性运行。
+  *         栈 128 word = 512 B（只调用 BSP 小函数，configMINIMAL_STACK_SIZE 够用）。
+  *         优先级 2：低优先级，不抢任何东西（本项目业务任务将来用 2~6）。
+  */
+static void LedTask(void *argument)
+{
+  TickType_t lastWake = xTaskGetTickCount();
+  uint8_t    ledOn    = 1u;
+
+  (void)argument;
+
+  for (;;)
+  {
+    Led_SetColor(ledOn ? COLOR_GREEN : COLOR_OFF);
+    ledOn ^= 1u;		//取反
+	vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));   /* 绝对延时（自从上一次唤醒时间 开始延时，避免任务执行时间偏差）：500ms 一次，不累计漂移 */
+  }
+}
+
+/**
+  * @brief  Step 3 验证任务②：运行监视。
+  *         每 3 s 打印 FreeRTOS tick / HAL tick 及各自增量、堆水位、任务列表。
+  *         两个 tick 增量应同步 ≈3000（G1 的"增量对比"校验就靠这行输出）。
+  *         栈 256 word = 1 KB（printf / vTaskList 的格式化比较吃栈）。
+  *         优先级 2：与 LedTask 同级 —— 靠时间片轮转共享 CPU，长打印不会独占。
+  */
+static void MonTask(void *argument)
+{
+  TickType_t lastWake = xTaskGetTickCount();
+  TickType_t prevTick = lastWake;
+  uint32_t   prevHal  = HAL_GetTick();
+  static char listBuf[512];                  /* vTaskList 要求 ≥512 B 缓冲 */
+
+  (void)argument;
+
+  for (;;)
+  {
+    TickType_t tickNow = xTaskGetTickCount();
+    uint32_t   halNow  = HAL_GetTick();
+
+    printf("[rtos=%lu (+%lu)] [hal=%lu (+%lu)] free=%u min=%u\r\n",
+           (unsigned long)tickNow, (unsigned long)(tickNow - prevTick),
+           (unsigned long)halNow,  (unsigned long)(halNow - prevHal),
+           (unsigned)xPortGetFreeHeapSize(),
+           (unsigned)xPortGetMinimumEverFreeHeapSize());
+
+    prevTick = tickNow;
+    prevHal  = halNow;
+
+    vTaskList(listBuf);                      /* 需要 TRACE_FACILITY=1 + STATS_FORMATTING=1 */
+    printf("%s\r\n", listBuf);
+
+    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(3000));  /* 3 s 一次 */
+  }
+}
 
 /* USER CODE END 4 */
 

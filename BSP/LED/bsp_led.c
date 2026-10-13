@@ -18,7 +18,7 @@
 
 #define BREATH_TICKS   200u       /* 200 × 10 ms = 2 秒一个完整呼吸周期 */
 
-static App_Color_t s_color      = COLOR_GREEN;   /* 上电默认：绿色呼吸灯 */
+static App_Color_t s_color      = COLOR_WHITE;   /* 上电默认：白光（LedTask 启动后会立刻接管颜色） */
 static uint8_t     s_brightness = 100u;          /* pwm 命令设的亮度（呼吸幅度上限） */
 static uint16_t    s_phase      = 0u;            /* 三角波位置：0 → 100 → 0 */
 
