@@ -54,10 +54,16 @@ static void Led_Update(void)
   Pwm_SetBrightness(PWM_CH_BLUE, b);
 }
 
-/* TIM6 的 10 ms 中断回调（stm32h7xx_it.c 里的 TIM6_DAC_IRQHandler 会转到这） */
+/* HAL 的定时器周期中断回调（stm32h7xx_it.c 里 TIM7 / TIM6 两个 IRQHandler 都会转到这）：
+ *   TIM7 —— HAL 时基：每 1 ms 喂一次 HAL_IncTick（CubeMX 已把时基从 SysTick 换成 TIM7）；
+ *   TIM6 —— 呼吸灯：每 10 ms 把呼吸比例推一格并刷新 CCR。 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  if (htim->Instance == TIM6)
+  if (htim->Instance == TIM7)
+  {
+    HAL_IncTick();                 /* HAL 时基，1 ms 一次 */
+  }
+  else if (htim->Instance == TIM6)
   {
     s_phase++;
     if (s_phase >= BREATH_TICKS)

@@ -5,3 +5,7 @@ Listings/
 *.uvguix.*
 *.bak
 *.dep
+
+# 新 Keil 工程（demo2_1）的构建输出目录与列表文件
+MDK-ARM/demo2_1/
+MDK-ARM/*.lst
