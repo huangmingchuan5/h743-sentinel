@@ -18,6 +18,7 @@
 #include "bsp_ee.h"
 #include "config.h"
 #include "log.h"
+#include "bsp_i2c_bus.h"
 #include <stdio.h>
 
 #define CONSOLE_LINE_MAX         80u   /* 行缓冲大小，包含 '\0'（log 要放 60 字节正文） */
@@ -49,6 +50,8 @@ static void        Cmd_Info(const char *arg);
 static void        Cmd_Log(const char *arg);
 static void        Cmd_Dump(const char *arg);
 static void        Cmd_Clear(const char *arg);
+static void        Cmd_I2c(const char *arg);
+static const char *I2c_AddrName(uint8_t addr7);
 static void        Trim_Tail(char *s);
 static char        Lower(char c);
 static uint8_t     Str_EqualNoCase(const char *a, const char *b);
@@ -155,6 +158,7 @@ static void Help_Print(void)
   Uart_Printf("  save | load                     store / restore the config\r\n");
   Uart_Printf("  log <text>                      append one record (max 60 bytes)\r\n");
   Uart_Printf("  dump | clear                    list all / erase the log area\r\n");
+  Uart_Printf("  i2c scan                        probe the I2C bus and list devices\r\n");
 }
 
 static void Cmd_Color(const char *arg)
@@ -379,6 +383,55 @@ static void Cmd_Clear(const char *arg)
   Uart_Printf("OK  log area erased\r\n");
 }
 
+/* i2c scan：探测 0x08..0x77 所有 7 位地址，列出有应答的器件。
+ * 先扫完、再打印——总线锁不跨输出。 */
+static void Cmd_I2c(const char *arg)
+{
+  uint8_t found[16];
+  uint8_t n = 0u;
+  uint8_t addr;
+  uint8_t i;
+
+  if (Str_EqualNoCase(arg, "scan") == 0u)
+  {
+    Uart_Printf("ERR usage: i2c scan\r\n");
+    return;
+  }
+
+  Uart_Printf("i2c scan: probing 0x08..0x77 ...\r\n");
+
+  for (addr = 0x08u; addr <= 0x77u; addr++)
+  {
+    if ((I2cBus_Probe(addr) != 0u) && (n < (uint8_t)sizeof(found)))
+    {
+      found[n] = addr;
+      n++;
+    }
+  }
+
+  Uart_Printf("i2c scan: %u device(s) found\r\n", (unsigned)n);
+  for (i = 0u; i < n; i++)
+  {
+    Uart_Printf("  0x%02X  %s\r\n", (unsigned)found[i], I2c_AddrName(found[i]));
+  }
+  if (n == 0u)
+  {
+    Uart_Printf("  (none - check PB8/PB9 wiring and pull-ups)\r\n");
+  }
+}
+
+/* 常见地址的器件名（未知地址显示 "-"） */
+static const char *I2c_AddrName(uint8_t addr7)
+{
+  switch (addr7)
+  {
+    case 0x50u: return "EEPROM (AT24C02)";
+    case 0x1Eu: return "AP3216C (light/proximity)";
+    case 0x68u: return "MPU6050 (accel/gyro)";
+    default:    return "-";
+  }
+}
+
 
 
 static void Dispatch(char *cmd, char *arg)
@@ -418,6 +471,10 @@ static void Dispatch(char *cmd, char *arg)
   else if (Str_EqualNoCase(cmd, "clear") != 0u)
   {
     Cmd_Clear(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "i2c") != 0u)
+  {
+    Cmd_I2c(arg);
   }
   else
   {

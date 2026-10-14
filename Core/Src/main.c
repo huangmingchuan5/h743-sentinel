@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "bsp_uart.h"
+#include "bsp_i2c_bus.h"
 #include "console.h"
 #include "config.h"
 #include "bsp_qspi_flash.h"
@@ -123,6 +124,9 @@ int main(void)
 
   /* 创建串口 RTOS 对象（uartMutex / txDoneSem）：必须在调度器启动前 */
   Uart_RtosInit();
+
+  /* 创建 I2C 总线互斥量（EEPROM / 传感器共用一条 I2C4）：必须在调度器启动前 */
+  I2cBus_Init();
 
   Console_Init();
 

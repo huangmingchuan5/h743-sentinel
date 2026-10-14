@@ -20,9 +20,10 @@
 #define EE_TIMEOUT_MS      100u     /* 单次 I2C 传输超时 */
 
 /* 返回值统一约定：0 = 成功；其余 = 错误码
-   （1/2/3 是 HAL 的 HAL_ERROR/HAL_BUSY/HAL_TIMEOUT，0x20 是我们自己的越界检查） */
+   （1/2/3 是 HAL 的 HAL_ERROR/HAL_BUSY/HAL_TIMEOUT，0x20/0x21 是我们自己的越界/忙检查） */
 #define EE_OK              0x00u
 #define EE_ERR_RANGE       0x20u
+#define EE_ERR_BUSY        0x21u    /* 抢 I2C 总线超时（别的任务正占着总线） */
 
 /** 检查器件是否应答：0 = 在线，非 0 = 失败。 */
 uint8_t Ee_Check(void);

@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_PWR_LDO_SUPPLY,USE_HAL_DRIVER,STM32H743xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;..\App\Config;..\App\console;..\App\log;..\BSP\ee;..\BSP\flash;..\BSP\LED;..\BSP\pwm;..\BSP\uart;..\FreeRTOS\include;..\FreeRTOS\port;..\User</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;..\App\Config;..\App\console;..\App\log;..\BSP\ee;..\BSP\flash;..\BSP\LED;..\BSP\pwm;..\BSP\uart;..\FreeRTOS\include;..\FreeRTOS\port;..\User;..\BSP\i2c</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -593,6 +593,11 @@
               <FileName>bsp_uart.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\uart\bsp_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_i2c_bus.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\i2c\bsp_i2c_bus.c</FilePath>
             </File>
           </Files>
         </Group>
