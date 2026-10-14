@@ -292,7 +292,7 @@ BaseType_t xReturn = pdFAIL;
 		{
 			xReturn = xTaskCreate(	prvTimerTask,
 									"Tmr Svc",
-									configTIMER_TASK_STACK_DEPTH,
+									configTIMER_TASK_STACK_DEPTH,	//256
 									NULL,
 									( ( UBaseType_t ) configTIMER_TASK_PRIORITY ) | portPRIVILEGE_BIT,
 									&xTimerTaskHandle );

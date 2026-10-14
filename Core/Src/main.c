@@ -27,6 +27,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <string.h>
 #include "bsp_uart.h"
 #include "console.h"
 #include "config.h"
@@ -120,6 +121,9 @@ int main(void)
 	  printf(" type 'help' for the command list\r\n");
 	  printf("========================================\r\n");
 
+  /* 创建串口 RTOS 对象（uartMutex / txDoneSem）：必须在调度器启动前 */
+  Uart_RtosInit();
+
   Console_Init();
 
   /* 启动三路 PWM + TIM6 呼吸中断：上电默认绿色呼吸灯 */
@@ -171,7 +175,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  /* ---- Step 3：创建两个验证任务，然后启动调度器 ---- */
+  /* ---- Step 3：创建3个验证任务，然后启动调度器 ---- */
   if (xTaskCreate(LedTask, "LED", 128u, NULL, 2u, NULL) != pdPASS)
   {
     printf("rtos   : create LED task failed\r\n");
@@ -181,8 +185,13 @@ int main(void)
     printf("rtos   : create MON task failed\r\n");
   }
 
+  if (xTaskCreate(ConsoleTask, "CON", 512u, NULL, 3u, NULL) != pdPASS)
+  {
+    printf("rtos   : create CON task failed\r\n");
+  }
+
   printf("rtos   : starting scheduler...\r\n");
-  vTaskStartScheduler();
+  vTaskStartScheduler();		//创建IdleTask和软件定时器任务
 
   /* 正常情况不会到这里；只有堆不足、连 Idle/定时器任务都建不起来时才会返回 */
   while (1)
@@ -269,7 +278,7 @@ static void LedTask(void *argument)
 
   for (;;)
   {
-    Led_SetColor(ledOn ? COLOR_GREEN : COLOR_OFF);
+    Led_SetColor(ledOn ? COLOR_WHITE : COLOR_OFF);
     ledOn ^= 1u;		//取反
 	vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));   /* 绝对延时（自从上一次唤醒时间 开始延时，避免任务执行时间偏差）：500ms 一次，不累计漂移 */
   }
@@ -296,17 +305,19 @@ static void MonTask(void *argument)
     TickType_t tickNow = xTaskGetTickCount();
     uint32_t   halNow  = HAL_GetTick();
 
-    printf("[rtos=%lu (+%lu)] [hal=%lu (+%lu)] free=%u min=%u\r\n",
-           (unsigned long)tickNow, (unsigned long)(tickNow - prevTick),
-           (unsigned long)halNow,  (unsigned long)(halNow - prevHal),
-           (unsigned)xPortGetFreeHeapSize(),
-           (unsigned)xPortGetMinimumEverFreeHeapSize());
+    Uart_Printf("[rtos=%lu (+%lu)] [hal=%lu (+%lu)] free=%u min=%u rxdrop=%u\r\n",
+                (unsigned long)tickNow, (unsigned long)(tickNow - prevTick),
+                (unsigned long)halNow,  (unsigned long)(halNow - prevHal),
+                (unsigned)xPortGetFreeHeapSize(),
+                (unsigned)xPortGetMinimumEverFreeHeapSize(),
+                (unsigned)Uart_RxDropped());
 
     prevTick = tickNow;
     prevHal  = halNow;
 
     vTaskList(listBuf);                      /* 需要 TRACE_FACILITY=1 + STATS_FORMATTING=1 */
-    printf("%s\r\n", listBuf);
+    Uart_Write(listBuf, (uint16_t)strlen(listBuf));
+    Uart_Printf("\r\n");
 
     vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(3000));  /* 3 s 一次 */
   }

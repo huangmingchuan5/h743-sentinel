@@ -4236,7 +4236,7 @@ TickType_t uxReturn;
 			{
 				if( xClearCountOnExit != pdFALSE )
 				{
-					pxCurrentTCB->ulNotifiedValue = 0UL;
+					pxCurrentTCB->ulNotifiedValue = 0UL;	
 				}
 				else
 				{

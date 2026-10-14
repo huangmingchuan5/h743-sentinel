@@ -1,14 +1,14 @@
 /**
   ******************************************************************************
   * @file    console.c
-  * @brief   P0 记录仪的 Day 1 命令控制台。
+  * @brief   P0 记录仪的命令控制台（Step 4：已任务化）。
   *
-  *          读取层：Uart_ReadByte()，每次一个字节，超时 10 ms
-  *          行处理层：回显、退格、64 字节缓冲、CR / CRLF / LF
-  *          命令层：help / color / pwm（不区分大小写）
+  *          读取层：USART1 中断 → 256 B 环形缓冲 → 通知 ConsoleTask 来取
+  *          行处理层：回显、退格、80 字节行缓冲、CR / CRLF / LF、超长丢弃
+  *          命令层：help / color / pwm / info / save / load / log / dump / clear
   *
-  *          color 会直接点亮对应的 LED；pwm 仍然只更新亮度数值，
-  *          PWM 输出（呼吸灯）留到 Day 4。
+  *          输出统一走 Uart_Printf()（互斥量 + 中断发送），多任务同时打印
+  *          不会互相插花；printf 只留给调度器启动前的代码。
   ******************************************************************************
 */
 
@@ -21,7 +21,6 @@
 #include <stdio.h>
 
 #define CONSOLE_LINE_MAX         80u   /* 行缓冲大小，包含 '\0'（log 要放 60 字节正文） */
-#define CONSOLE_READ_TIMEOUT_MS  10u   /* 一次轮询最多等待 10 ms             */
 
 /* -------------------------------------------------------------------------- */
 /* 私有变量                                                                   */
@@ -61,7 +60,7 @@ static const char *Color_Name(uint8_t color);
 
 static void Prompt(void)
 {
-  printf("> ");
+  Uart_Printf("> ");
 }
 
 static char Lower(char c)
@@ -148,21 +147,21 @@ static const char *Color_Name(uint8_t color)
 
 static void Help_Print(void)
 {
-  printf("Commands (case insensitive):\r\n");
-  printf("  help                            show this list\r\n");
-  printf("  color red|green|blue|white|off  set the LED colour\r\n");
-  printf("  pwm 0..100                      set the brightness in percent\r\n");
-  printf("  info                            show state + raw EEPROM bytes\r\n");
-  printf("  save | load                     store / restore the config\r\n");
-  printf("  log <text>                      append one record (max 60 bytes)\r\n");
-  printf("  dump | clear                    list all / erase the log area\r\n");
+  Uart_Printf("Commands (case insensitive):\r\n");
+  Uart_Printf("  help                            show this list\r\n");
+  Uart_Printf("  color red|green|blue|white|off  set the LED colour\r\n");
+  Uart_Printf("  pwm 0..100                      set the brightness in percent\r\n");
+  Uart_Printf("  info                            show state + raw EEPROM bytes\r\n");
+  Uart_Printf("  save | load                     store / restore the config\r\n");
+  Uart_Printf("  log <text>                      append one record (max 60 bytes)\r\n");
+  Uart_Printf("  dump | clear                    list all / erase the log area\r\n");
 }
 
 static void Cmd_Color(const char *arg)
 {
   if (*arg == '\0')
   {
-    printf("ERR usage: color red|green|blue|white|off\r\n");
+    Uart_Printf("ERR usage: color red|green|blue|white|off\r\n");
     return;
   }
 
@@ -188,13 +187,13 @@ static void Cmd_Color(const char *arg)
   }
   else
   {
-    printf("ERR unknown color '%s'\r\n", arg);
-    printf("    try: red|green|blue|white|off\r\n");
+    Uart_Printf("ERR unknown color '%s'\r\n", arg);
+    Uart_Printf("    try: red|green|blue|white|off\r\n");
     return;
   }
 
   Led_SetColor((App_Color_t)s_color);              /* 真正去点灯 */
-  printf("OK  color = %s\r\n", Color_Name(s_color));
+  Uart_Printf("OK  color = %s\r\n", Color_Name(s_color));
 }
 
 static void Cmd_Pwm(const char *arg)
@@ -203,24 +202,24 @@ static void Cmd_Pwm(const char *arg)
 
   if (*arg == '\0')
   {
-    printf("ERR usage: pwm 0..100\r\n");
+    Uart_Printf("ERR usage: pwm 0..100\r\n");
     return;
   }
 
   if (Parse_U32(arg, &value) == 0u)
   {
-    printf("ERR not a number: '%s'\r\n", arg);
+    Uart_Printf("ERR not a number: '%s'\r\n", arg);
     return;
   }
 
   if (value > 100u)
   {
-    printf("ERR brightness %lu out of range 0..100\r\n", (unsigned long)value);
+    Uart_Printf("ERR brightness %lu out of range 0..100\r\n", (unsigned long)value);
     return;
   }
 
   Console_SetBrightness((uint8_t)value);   /* 亮度转给 LED 模块，呼吸幅度立刻跟着变 */
-  printf("OK  brightness = %u%%\r\n", (unsigned)Console_GetBrightness());
+  Uart_Printf("OK  brightness = %u%%\r\n", (unsigned)Console_GetBrightness());
 }
 
 /* save：把当前 {颜色, 亮度, 日志条数} 写进 EEPROM */
@@ -233,13 +232,13 @@ static void Cmd_Save(const char *arg)
   st = Config_Save();
   if (st == EE_OK)
   {
-    printf("OK  saved: color=%u brightness=%u count=%u\r\n",
+    Uart_Printf("OK  saved: color=%u brightness=%u count=%u\r\n",
            (unsigned)Console_GetColor(), (unsigned)Console_GetBrightness(),
            (unsigned)Config_GetCount());
   }
   else
   {
-    printf("ERR EEPROM write failed (0x%02X)\r\n", (unsigned)st);
+    Uart_Printf("ERR EEPROM write failed (0x%02X)\r\n", (unsigned)st);
   }
 }
 
@@ -253,16 +252,16 @@ static void Cmd_Load(const char *arg)
   st = Config_Load();
   if (st == 0u)
   {
-    printf("OK  loaded: color=%u brightness=%u\r\n",
+    Uart_Printf("OK  loaded: color=%u brightness=%u\r\n",
            (unsigned)Console_GetColor(), (unsigned)Console_GetBrightness());
   }
   else if (st == 1u)
   {
-    printf("OK  no valid config, defaults written\r\n");
+    Uart_Printf("OK  no valid config, defaults written\r\n");
   }
   else
   {
-    printf("ERR EEPROM read failed (0x%02X)\r\n", (unsigned)st);
+    Uart_Printf("ERR EEPROM read failed (0x%02X)\r\n", (unsigned)st);
   }
 }
 
@@ -275,23 +274,23 @@ static void Cmd_Info(const char *arg)
 
   (void)arg;
 
-  printf("color      = %s\r\n", Color_Name((uint8_t)Console_GetColor()));
-  printf("brightness = %u %%\r\n", (unsigned)Console_GetBrightness());
-  printf("log count  = %u\r\n", (unsigned)Log_GetCount());
+  Uart_Printf("color      = %s\r\n", Color_Name((uint8_t)Console_GetColor()));
+  Uart_Printf("brightness = %u %%\r\n", (unsigned)Console_GetBrightness());
+  Uart_Printf("log count  = %u\r\n", (unsigned)Log_GetCount());
 
   st = Ee_Read(CFG_ADDR, b, CFG_SIZE);
   if (st == EE_OK)
   {
-    printf("EEPROM[0..7] =");
+    Uart_Printf("EEPROM[0..7] =");
     for (i = 0u; i < CFG_SIZE; i++)
     {
-      printf(" %02X", (unsigned)b[i]);
+      Uart_Printf(" %02X", (unsigned)b[i]);
     }
-    printf("\r\n");
+    Uart_Printf("\r\n");
   }
   else
   {
-    printf("ERR EEPROM read failed (0x%02X)\r\n", (unsigned)st);
+    Uart_Printf("ERR EEPROM read failed (0x%02X)\r\n", (unsigned)st);
   }
 }
 
@@ -302,28 +301,28 @@ static void Cmd_Log(const char *arg)
 
   if (*arg == '\0')
   {
-    printf("ERR usage: log <text>  (max %u bytes)\r\n", (unsigned)LOG_TEXT_MAX);
+    Uart_Printf("ERR usage: log <text>  (max %u bytes)\r\n", (unsigned)LOG_TEXT_MAX);
     return;
   }
 
   st = Log_Append(arg);
   if (st == 0u)
   {
-    printf("OK  log #%u saved", (unsigned)Log_GetCount());
+    Uart_Printf("OK  log #%u saved", (unsigned)Log_GetCount());
     if (arg[LOG_TEXT_MAX] != '\0')   /* 输入比 60 字节长，被截断了 */
     {
-      printf("(text cut to %u bytes)", (unsigned)LOG_TEXT_MAX);
+      Uart_Printf("(text cut to %u bytes)", (unsigned)LOG_TEXT_MAX);
     }
-    printf("\r\n");
+    Uart_Printf("\r\n");
   }
   else if (st == 1u)
   {
-    printf("ERR log area is full (%u records), use 'clear'\r\n",
+    Uart_Printf("ERR log area is full (%u records), use 'clear'\r\n",
            (unsigned)LOG_MAX_RECORDS);
   }
   else
   {
-    printf("ERR flash write failed (0x%02X)\r\n", (unsigned)st);
+    Uart_Printf("ERR flash write failed (0x%02X)\r\n", (unsigned)st);
   }
 }
 
@@ -339,7 +338,7 @@ static void Cmd_Dump(const char *arg)
 
   if (n == 0u)
   {
-    printf("(no records)\r\n");
+    Uart_Printf("(no records)\r\n");
     return;
   }
 
@@ -347,15 +346,15 @@ static void Cmd_Dump(const char *arg)
   {
     if (Log_ReadAt(i, rec) != FLASH_OK)
     {
-      printf("ERR read record #%u failed\r\n", (unsigned)(i + 1u));
+      Uart_Printf("ERR read record #%u failed\r\n", (unsigned)(i + 1u));
       return;
     }
 
     (void)Log_TextOf(rec, text, (uint16_t)sizeof(text));
-    printf("#%u  %s\r\n", (unsigned)(i + 1u), text);
+    Uart_Printf("#%u  %s\r\n", (unsigned)(i + 1u), text);
   }
 
-  printf("total %u record(s)\r\n", (unsigned)n);
+  Uart_Printf("total %u record(s)\r\n", (unsigned)n);
 }
 
 /* clear：擦掉整个日志区并把条数清零（EEPROM 也一起更新） */
@@ -368,16 +367,16 @@ static void Cmd_Clear(const char *arg)
   st = Log_Clear();
   if (st != FLASH_OK)
   {
-    printf("ERR flash erase failed (0x%02X)\r\n", (unsigned)st);
+    Uart_Printf("ERR flash erase failed (0x%02X)\r\n", (unsigned)st);
     return;
   }
 
   if (Config_Save() != EE_OK)        /* 把"条数 = 0"写进 EEPROM，保持两边一致 */
   {
-    printf("WARN log cleared, but config write failed\r\n");
+    Uart_Printf("WARN log cleared, but config write failed\r\n");
   }
 
-  printf("OK  log area erased\r\n");
+  Uart_Printf("OK  log area erased\r\n");
 }
 
 
@@ -422,7 +421,7 @@ static void Dispatch(char *cmd, char *arg)
   }
   else
   {
-    printf("ERR unknown command '%s', type 'help'\r\n", cmd);
+    Uart_Printf("ERR unknown command '%s', type 'help'\r\n", cmd);
   }
 }
 
@@ -483,18 +482,13 @@ void Console_Init(void)
   s_dropping = 0u;
   s_skip_lf  = 0u;
   Led_SetColor((App_Color_t)s_color);              /* 上电默认颜色（绿）立即生效 */
-  Prompt();
+  /* 本函数在调度器启动前调用：RTOS 还没跑起来，不能用 Uart_Printf，继续用阻塞 printf */
+  printf("> ");
 }
 
-void Console_Task(void)
+/* 处理"已经收到的"**一个字节（原 Console_Task 里的逐字节逻辑，原样保留） */
+static void Console_FeedByte(int c)
 {
-  int c = Uart_ReadByte(CONSOLE_READ_TIMEOUT_MS);
-
-  if (c < 0)
-  {
-    return;                          /* 没有任何输入，回到主循环 */
-  }
-
   if (c == '\n' && s_skip_lf != 0u)  /* "\r\n" 中的那个 '\n' */
   {
     s_skip_lf = 0u;
@@ -508,7 +502,7 @@ void Console_Task(void)
     {
       s_skip_lf = 1u;
     }
-    printf("\r\n");
+    Uart_Printf("\r\n");
     Line_Execute();
     Prompt();
     return;
@@ -519,7 +513,7 @@ void Console_Task(void)
     if (s_len > 0u)
     {
       s_len--;
-      printf("\b \b");               /* 在屏幕上擦掉这个字符 */
+      Uart_Printf("\b \b");          /* 在屏幕上擦掉这个字符 */
     }
     return;
   }
@@ -537,14 +531,37 @@ void Console_Task(void)
   if (s_len >= CONSOLE_LINE_MAX - 1u)
   {
     s_dropping = 1u;
-    printf("\r\nERR line too long (max %u characters), press Enter\r\n",
-           (unsigned)(CONSOLE_LINE_MAX - 1u));
+    Uart_Printf("\r\nERR line too long (max %u characters), press Enter\r\n",
+                (unsigned)(CONSOLE_LINE_MAX - 1u));
     return;
   }
 
   s_line[s_len] = (char)c;
   s_len++;
-  putchar(c);                        /* 本地回显，让你看到自己输入的内容 */
+  Uart_Putc((uint8_t)c);             /* 本地回显，让你看到自己输入的内容 */
+}
+
+/* Step 4：控制台任务。平时阻塞在任务通知上，醒来后把环形缓冲里的字节全部处理掉。 */
+void ConsoleTask(void *argument)
+{
+  int c;
+
+	//(void)argument 是为了消除“未使用参数”的编译警告。
+  (void)argument;
+
+  /* 绑定"收到字节后通知谁"，并启动接收中断（此刻调度器已经在跑） */
+  Uart_RxStart(xTaskGetCurrentTaskHandle());
+
+  for (;;)
+  {
+	  //这个任务本来就是一直等待RX接受回调函数释放出信号量，这里当作二值信号量获得，然后执行
+	  (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   /* 睡到"有数据"的通知为止 *///传入参数为pdTRUE==二值信号量；pdFALSE==计数信号量
+
+    while ((c = Uart_RxGet()) >= 0)                  /* 一次取空 */
+    {
+		Console_FeedByte(c);		//c 是一个个发送的，在循环直至发完（把缓冲区的数据全部取完）
+    }
+  }
 }
 
 uint8_t Console_GetColor(void)

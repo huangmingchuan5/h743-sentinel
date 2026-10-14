@@ -1,7 +1,8 @@
 /**
   ******************************************************************************
   * @file    console.h
-  * @brief   Day 1 命令控制台：help / color / pwm。
+  * @brief   命令控制台：行编辑 + 命令解析。收字节走"中断 + 环形缓冲"，
+  *          由 FreeRTOS 任务 ConsoleTask 处理（Step 4 任务化）。
   ******************************************************************************
   */
 
@@ -16,8 +17,8 @@
 /** 复位行缓冲并打印第一个提示符。 */
 void Console_Init(void);
 
-/** 在主循环中调用。它最多等待 10 ms 来接收一个字节。 */
-void Console_Task(void);
+/** 控制台 RTOS 任务：等待串口通知 → 处理输入 → 执行命令。 */
+void ConsoleTask(void *argument);
 
 /** 当前状态，后续由 PWM 驱动以及 save/load 使用。 */
 uint8_t Console_GetColor(void);
