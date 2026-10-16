@@ -19,6 +19,8 @@
 #include "config.h"
 #include "log.h"
 #include "bsp_i2c_bus.h"
+#include "bsp_ap3216c.h"
+#include "bsp_mpu6050.h"
 #include <stdio.h>
 
 #define CONSOLE_LINE_MAX         80u   /* 行缓冲大小，包含 '\0'（log 要放 60 字节正文） */
@@ -52,6 +54,7 @@ static void        Cmd_Dump(const char *arg);
 static void        Cmd_Clear(const char *arg);
 static void        Cmd_I2c(const char *arg);
 static const char *I2c_AddrName(uint8_t addr7);
+static void        Cmd_Sensor(const char *arg);
 static void        Trim_Tail(char *s);
 static char        Lower(char c);
 static uint8_t     Str_EqualNoCase(const char *a, const char *b);
@@ -159,6 +162,7 @@ static void Help_Print(void)
   Uart_Printf("  log <text>                      append one record (max 60 bytes)\r\n");
   Uart_Printf("  dump | clear                    list all / erase the log area\r\n");
   Uart_Printf("  i2c scan                        probe the I2C bus and list devices\r\n");
+  Uart_Printf("  sensor                          one-shot read of ALS/PS/accelerometer\r\n");
 }
 
 static void Cmd_Color(const char *arg)
@@ -432,6 +436,60 @@ static const char *I2c_AddrName(uint8_t addr7)
   }
 }
 
+/* sensor：把三个 I2C 器件的实时值各读一次（Step 5.2 数据通路验证） */
+static void Cmd_Sensor(const char *arg)
+{
+  uint16_t als = 0u;
+  uint16_t ps  = 0u;
+  int16_t  ax = 0;
+  int16_t  ay = 0;
+  int16_t  az = 0;
+  uint8_t  st;
+
+  (void)arg;
+
+  /* 环境光：原始 counts；按默认量程 0.35 lux/count 折算一个参考值 */
+  st = Ap3216c_ReadAls(&als);
+  if (st == 0u)
+  {
+    Uart_Printf("ALS : raw=%u  (~%lu lux)\r\n",
+                (unsigned)als, (unsigned long)(((uint32_t)als * 35u) / 100u));
+  }
+  else
+  {
+    Uart_Printf("ALS : read failed (%u)\r\n", (unsigned)st);
+  }
+
+  /* 接近：低 10 位数据 + bit15 靠近标志；溢出时数据仅供参考 */
+  st = Ap3216c_ReadPs(&ps);
+  if (st == 0u)
+  {
+    Uart_Printf("PS  : %u  near=%u\r\n",
+                (unsigned)(ps & 0x03FFu), (unsigned)((ps >> 15) & 1u));
+  }
+  else if (st == 1u)
+  {
+    Uart_Printf("PS  : %u  near=%u  (overflow flag)\r\n",
+                (unsigned)(ps & 0x03FFu), (unsigned)((ps >> 15) & 1u));
+  }
+  else
+  {
+    Uart_Printf("PS  : read failed (%u)\r\n", (unsigned)st);
+  }
+
+  /* 加速度：±4g 量程，8192 LSB = 1g */
+  st = Mpu6050_ReadAccel(&ax, &ay, &az);
+  if (st == 0u)
+  {
+    Uart_Printf("ACC : x=%d y=%d z=%d  (raw LSB; 8192 LSB = 1g)\r\n",
+                (int)ax, (int)ay, (int)az);
+  }
+  else
+  {
+    Uart_Printf("ACC : read failed (%u)\r\n", (unsigned)st);
+  }
+}
+
 
 
 static void Dispatch(char *cmd, char *arg)
@@ -475,6 +533,10 @@ static void Dispatch(char *cmd, char *arg)
   else if (Str_EqualNoCase(cmd, "i2c") != 0u)
   {
     Cmd_I2c(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "sensor") != 0u)
+  {
+    Cmd_Sensor(arg);
   }
   else
   {

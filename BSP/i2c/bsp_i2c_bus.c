@@ -8,6 +8,7 @@
 #include "bsp_i2c_bus.h"
 #include "i2c.h"                   /* CubeMX 生成的 hi2c4 */
 #include "FreeRTOS.h"
+#include "task.h"
 #include "semphr.h"
 
 static SemaphoreHandle_t s_i2cMutex = NULL;
@@ -23,15 +24,25 @@ uint8_t I2cBus_Take(uint32_t timeout_ms)
 {
   if (s_i2cMutex == NULL)
   {
-    return 1u;                     /* 调度器启动前的单线程阶段：无需加锁 */
+    return 1u;                     /* 还没创建：无需加锁 */
+	//"无需加锁"，视为获取成功
   }
 
-  return (xSemaphoreTake(s_i2cMutex, pdMS_TO_TICKS(timeout_ms)) == pdPASS) ? 1u : 0u;
+  /* 调度器启动前是单线程阶段，不碰互斥量：此时 xSemaphoreTake/Give 内部的
+     临界区会把 BASEPRI 卡在 0x50（port.c 的 uxCriticalNesting 初值是哨兵
+     0xaaaaaaaa，退出时判断 "==0" 不成立、屏蔽不会清），会连带屏蔽 TIM7
+     （HAL 时基）和 TIM6（呼吸灯）中断。 */
+  if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED)		//判断调度器处于没有启动的状态，是则进入循环(也是视为成功)
+  {
+    return 1u;
+  }
+
+  return (xSemaphoreTake(s_i2cMutex, pdMS_TO_TICKS(timeout_ms)) == pdPASS) ? 1u : 0u;		//操作是进行消费信号量
 }
 
 void I2cBus_Give(void)
 {
-  if (s_i2cMutex != NULL)
+  if ((s_i2cMutex != NULL) && (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED))
   {
     (void)xSemaphoreGive(s_i2cMutex);
   }

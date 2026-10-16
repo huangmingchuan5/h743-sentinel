@@ -18,6 +18,7 @@
 
 #define I2C_BUS_TIMEOUT_MS        100u   /* 抢锁超时（别的任务正占着总线时最多等这么久） */
 #define I2C_BUS_PROBE_TIMEOUT_MS  3u     /* 单次器件探测超时 */
+#define I2C_BUS_ERR_BUSY          0x21u  /* 抢总线超时（各 I2C 驱动统一的"忙"错误码） */
 
 /** 调度器启动前调用：创建总线互斥量。 */
 void I2cBus_Init(void);

@@ -30,6 +30,8 @@
 #include <string.h>
 #include "bsp_uart.h"
 #include "bsp_i2c_bus.h"
+#include "bsp_ap3216c.h"
+#include "bsp_mpu6050.h"
 #include "console.h"
 #include "config.h"
 #include "bsp_qspi_flash.h"
@@ -122,11 +124,35 @@ int main(void)
 	  printf(" type 'help' for the command list\r\n");
 	  printf("========================================\r\n");
 
+  /* 打印上次复位原因（读后清除，便于下次判断）：
+     POR=上电  BOR=掉电/欠压  PIN=复位引脚  SFT=软件复位  IWDG/WWDG=看门狗  LPWR=低功耗复位 */
+  {
+    printf("rst    :");
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST)   != 0u) { printf(" POR"); }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST)   != 0u) { printf(" BOR"); }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST)   != 0u) { printf(" PIN"); }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)   != 0u) { printf(" SFT"); }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDG1RST) != 0u) { printf(" IWDG"); }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDG1RST) != 0u) { printf(" WWDG"); }
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWR1RST) != 0u) { printf(" LPWR"); }
+    printf("\r\n");
+    __HAL_RCC_CLEAR_RESET_FLAGS();
+  }
+
   /* 创建串口 RTOS 对象（uartMutex / txDoneSem）：必须在调度器启动前 */
   Uart_RtosInit();
 
   /* 创建 I2C 总线互斥量（EEPROM / 传感器共用一条 I2C4）：必须在调度器启动前 */
   I2cBus_Init();
+
+  /* 重要：在调度器启动前调用 FreeRTOS 的"创建类"API（xSemaphoreCreateXxx
+     内部的 xQueueGenericReset 有 taskENTER_CRITICAL）会留下 BASEPRI=0x50 的
+     中断屏蔽——port.c 里 uxCriticalNesting 的初值是哨兵 0xaaaaaaaa，退出临界区
+     时判断 "==0" 不成立，屏蔽不会被清掉。后果：TIM7（HAL 时基）和 TIM6（呼吸灯）
+     中断一起被屏蔽，启动阶段任何 HAL_Delay 都会死循环（5.2 首次踩中）。
+     这里在所有"创建类"调用之后、任何依赖中断的代码（Led_Init / 传感器初始化）
+     之前，手动清一次屏蔽；调度器启动后，第一个临界区退出会自动恢复正常。 */
+  __set_BASEPRI(0u);
 
   Console_Init();
 
@@ -174,6 +200,17 @@ int main(void)
     {
       printf("flash  : no response (check QSPI wiring/clock)\r\n");
     }
+  }
+
+  /* Step 5.2：初始化 I2C 传感器（失败只影响对应读数，不阻塞启动） */
+  {
+    uint8_t ap_st = Ap3216c_Init();
+    uint8_t mp_st = Mpu6050_Init();
+
+    printf("sensor : AP3216C %s, MPU6050 %s (ID=0x%02X)\r\n",
+           (ap_st == 0u) ? "ok" : "FAIL",
+           (mp_st == 0u) ? "ok" : "FAIL",
+           (unsigned)Mpu6050_WhoAmI());
   }
   /* USER CODE END 2 */
 
