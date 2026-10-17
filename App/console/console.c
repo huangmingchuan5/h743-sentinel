@@ -22,6 +22,7 @@
 #include "bsp_ap3216c.h"
 #include "bsp_mpu6050.h"
 #include "sample_task.h"
+#include "bsp_rtc.h"
 #include <stdio.h>
 
 #define CONSOLE_LINE_MAX         80u   /* 行缓冲大小，包含 '\0'（log 要放 60 字节正文） */
@@ -57,6 +58,7 @@ static void        Cmd_I2c(const char *arg);
 static const char *I2c_AddrName(uint8_t addr7);
 static void        Cmd_Sensor(const char *arg);
 static void        Cmd_Live(const char *arg);
+static void        Cmd_Time(const char *arg);
 static void        Trim_Tail(char *s);
 static char        Lower(char c);
 static uint8_t     Str_EqualNoCase(const char *a, const char *b);
@@ -166,6 +168,7 @@ static void Help_Print(void)
   Uart_Printf("  i2c scan                        probe the I2C bus and list devices\r\n");
   Uart_Printf("  sensor                          one-shot read of ALS/PS/accelerometer\r\n");
   Uart_Printf("  live [n]                        print the latest 20Hz sample (n times)\r\n");
+  Uart_Printf("  time [set YYYY-MM-DD hh:mm:ss]  show / set the RTC calendar\r\n");
 }
 
 static void Cmd_Color(const char *arg)
@@ -517,6 +520,7 @@ static void Cmd_Live(const char *arg)
   {
     Sample_t s;
     uint32_t age = 0u;
+    char     tsbuf[24];
 
     if (Sample_GetLatest(&s, &age) != 0u)
     {
@@ -524,8 +528,17 @@ static void Cmd_Live(const char *arg)
       return;
     }
 
-    Uart_Printf("[t=%lu age=%lums] als=%u ps=%u near=%u acc=(%d,%d,%d) flags=0x%04X q=%u/%u drop=%u\r\n",
-                (unsigned long)s.tstamp,
+    if ((s.flags & SAMPLE_F_TS_REAL) != 0u)
+    {
+      Rtc_FormatEpoch(s.tstamp, tsbuf, (uint16_t)sizeof(tsbuf));
+    }
+    else
+    {
+      (void)snprintf(tsbuf, sizeof(tsbuf), "t=%lums", (unsigned long)s.tstamp);
+    }
+
+    Uart_Printf("[%s age=%lums] als=%u ps=%u near=%u acc=(%d,%d,%d) flags=0x%04X q=%u/%u drop=%u\r\n",
+                tsbuf,
                 (unsigned long)age,
                 (unsigned)s.als,
                 (unsigned)(s.ps & 0x03FFu),
@@ -543,6 +556,121 @@ static void Cmd_Live(const char *arg)
 }
 
 
+
+/* ---- time 命令用的小工具 ---- */
+
+static uint8_t Digits2(const char *s, uint8_t *v)
+{
+  if ((s[0] < '0') || (s[0] > '9') || (s[1] < '0') || (s[1] > '9'))
+  {
+    return 0u;
+  }
+  *v = (uint8_t)((s[0] - '0') * 10 + (s[1] - '0'));
+  return 1u;
+}
+
+static uint8_t Digits4(const char *s, uint16_t *v)
+{
+  if ((s[0] < '0') || (s[0] > '9') || (s[1] < '0') || (s[1] > '9') ||
+      (s[2] < '0') || (s[2] > '9') || (s[3] < '0') || (s[3] > '9'))
+  {
+    return 0u;
+  }
+  *v = (uint16_t)(((s[0] - '0') * 1000) + ((s[1] - '0') * 100) +
+                  ((s[2] - '0') * 10) + (s[3] - '0'));
+  return 1u;
+}
+
+static uint8_t DaysInMonth(uint16_t y, uint8_t m)
+{
+  static const uint8_t dim[12] = {31u, 28u, 31u, 30u, 31u, 30u, 31u, 31u, 30u, 31u, 30u, 31u};
+  uint8_t d = dim[m - 1u];
+
+  if ((m == 2u) &&
+      (((y % 4u) == 0u) && (((y % 100u) != 0u) || ((y % 400u) == 0u))))
+  {
+    d = 29u;
+  }
+  return d;
+}
+
+/* time：查看 / 设置 RTC 日历
+   time                          → 显示当前日历与状态
+   time set YYYY-MM-DD hh:mm:ss  → 校时（并置"已校时"魔数）
+   time clear                    → 清除魔数（测试回退：时间戳改用上电 tick） */
+static void Cmd_Time(const char *arg)
+{
+  if (*arg == '\0')
+  {
+    uint32_t ep = 0u;
+
+    if ((Rtc_IsSet() != 0u) && (Rtc_GetEpoch(&ep) != 0u))
+    {
+      char ts[24];
+
+      Rtc_FormatEpoch(ep, ts, (uint16_t)sizeof(ts));
+      Uart_Printf("time   : %s  (epoch2000=%lu, valid)\r\n", ts, (unsigned long)ep);
+    }
+    else
+    {
+      Uart_Printf("time   : not set (samples use boot tick, flags bit15=0)\r\n");
+      Uart_Printf("         use: time set YYYY-MM-DD hh:mm:ss\r\n");
+    }
+    return;
+  }
+
+  if ((Lower(arg[0]) == 's') && (Lower(arg[1]) == 'e') && (Lower(arg[2]) == 't') &&
+      (arg[3] == ' '))
+  {
+    const char *p = &arg[4];
+    uint16_t y = 0u;
+    uint8_t  mo = 0u;
+    uint8_t  dd = 0u;
+    uint8_t  hh = 0u;
+    uint8_t  mi = 0u;
+    uint8_t  ss = 0u;
+
+    if ((p[4] == '-') && (p[7] == '-') && (p[10] == ' ') &&
+        (p[13] == ':') && (p[16] == ':') && (p[19] == '\0') &&
+        (Digits4(p, &y) != 0u) &&
+        (Digits2(p + 5, &mo) != 0u) && (Digits2(p + 8, &dd) != 0u) &&
+        (Digits2(p + 11, &hh) != 0u) && (Digits2(p + 14, &mi) != 0u) &&
+        (Digits2(p + 17, &ss) != 0u))
+    {
+      if ((y < 2000u) || (y > 2099u) || (mo < 1u) || (mo > 12u) ||
+          (dd < 1u) || (dd > DaysInMonth(y, mo)) ||
+          (hh > 23u) || (mi > 59u) || (ss > 59u))
+      {
+        Uart_Printf("ERR   : date/time out of range\r\n");
+        return;
+      }
+
+      if (Rtc_SetCivil(y, mo, dd, hh, mi, ss) != 0u)
+      {
+        Uart_Printf("OK    : time set to %04u-%02u-%02u %02u:%02u:%02u\r\n",
+                    (unsigned)y, (unsigned)mo, (unsigned)dd,
+                    (unsigned)hh, (unsigned)mi, (unsigned)ss);
+      }
+      else
+      {
+        Uart_Printf("ERR   : RTC write failed (is the RTC initialized?)\r\n");
+      }
+      return;
+    }
+
+    Uart_Printf("ERR usage: time set YYYY-MM-DD hh:mm:ss\r\n");
+    return;
+  }
+
+  if (Str_EqualNoCase(arg, "clear") != 0u)
+  {
+    Rtc_ClearSet();
+    Uart_Printf("OK    : RTC 'set' mark cleared (timestamps fall back to boot tick)\r\n");
+    return;
+  }
+
+  Uart_Printf("ERR usage: time | time set YYYY-MM-DD hh:mm:ss | time clear\r\n");
+}
 
 //匹配并执行相对应命令函数
 static void Dispatch(char *cmd, char *arg)
@@ -594,6 +722,10 @@ static void Dispatch(char *cmd, char *arg)
   else if (Str_EqualNoCase(cmd, "live") != 0u)
   {
     Cmd_Live(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "time") != 0u)
+  {
+    Cmd_Time(arg);
   }
   else
   {

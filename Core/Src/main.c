@@ -33,6 +33,7 @@
 #include "bsp_ap3216c.h"
 #include "bsp_mpu6050.h"
 #include "sample_task.h"
+#include "bsp_rtc.h"
 #include "console.h"
 #include "config.h"
 #include "bsp_qspi_flash.h"
@@ -212,6 +213,31 @@ int main(void)
            (ap_st == 0u) ? "ok" : "FAIL",
            (mp_st == 0u) ? "ok" : "FAIL",
            (unsigned)Mpu6050_WhoAmI());
+  }
+
+  /* Step 5.4：初始化 RTC（LSE 优先；失败退 LSI；都失败则时间戳用 tick） */
+  {
+    uint8_t rtc_st = Rtc_Init();
+
+    if (rtc_st == 2u)
+    {
+      printf("rtc    : FAIL (timestamps will use boot tick)\r\n");
+    }
+    else if (Rtc_IsSet() != 0u)
+    {
+      uint32_t ep = 0u;
+      char     ts[24];
+
+      (void)Rtc_GetEpoch(&ep);
+      Rtc_FormatEpoch(ep, ts, (uint16_t)sizeof(ts));
+      printf("rtc    : %s, calendar %s\r\n",
+             (rtc_st == 0u) ? "LSE ok" : "LSI fallback", ts);
+    }
+    else
+    {
+      printf("rtc    : %s, not set (tick timestamps until 'time set')\r\n",
+             (rtc_st == 0u) ? "LSE ok" : "LSI fallback");
+    }
   }
   /* USER CODE END 2 */
 

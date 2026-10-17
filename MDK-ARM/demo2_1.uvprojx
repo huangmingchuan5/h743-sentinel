@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_PWR_LDO_SUPPLY,USE_HAL_DRIVER,STM32H743xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;..\App\Config;..\App\console;..\App\log;..\BSP\ee;..\BSP\flash;..\BSP\LED;..\BSP\pwm;..\BSP\uart;..\FreeRTOS\include;..\FreeRTOS\port;..\User;..\BSP\i2c;..\BSP\sensor;..\App\sample</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;..\App\Config;..\App\console;..\App\log;..\BSP\ee;..\BSP\flash;..\BSP\LED;..\BSP\pwm;..\BSP\uart;..\FreeRTOS\include;..\FreeRTOS\port;..\User;..\BSP\i2c;..\BSP\sensor;..\App\sample;..\BSP\rtc</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -554,6 +554,16 @@
               <FileType>1</FileType>
               <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart_ex.c</FilePath>
             </File>
+            <File>
+              <FileName>stm32h7xx_hal_rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\STM32H7xx_HAL_Driver\Src\stm32h7xx_hal_rtc.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32h7xx_hal_rtc_ex.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\STM32H7xx_HAL_Driver\Src\stm32h7xx_hal_rtc_ex.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -608,6 +618,11 @@
               <FileName>bsp_mpu6050.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\BSP\sensor\bsp_mpu6050.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\BSP\rtc\bsp_rtc.c</FilePath>
             </File>
           </Files>
         </Group>

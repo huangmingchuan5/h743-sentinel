@@ -11,6 +11,7 @@
 #include "queue.h"
 #include "bsp_ap3216c.h"
 #include "bsp_mpu6050.h"
+#include "bsp_rtc.h"
 #include <string.h>
 
 /* 环境缓存：EnvTask 写、MotionTask 读，两侧都用临界区保护 */
@@ -25,6 +26,7 @@ typedef struct
 static QueueHandle_t s_logQueue   = NULL;
 static EnvData_t     s_env        = {0};
 static Sample_t      s_latest     = {0};
+static TickType_t    s_latestTick = 0u;
 static uint8_t       s_haveLatest = 0u;
 static uint16_t      s_dropCount  = 0u;
 
@@ -74,6 +76,7 @@ static void MotionTask(void *argument)
     int16_t  az = 0;
 
     uint8_t acc_st = Mpu6050_ReadAccel(&ax, &ay, &az);
+    TickType_t nowTick = xTaskGetTickCount();
 
     /* 1) 取环境缓存的拷贝（临界区保护） */
     {
@@ -89,7 +92,7 @@ static void MotionTask(void *argument)
 
       /* 2) 组装快照（32B） */
       s.seq    = 0u;                            /* Step 6 由 LoggerTask 分配 */
-      s.tstamp = (uint32_t)xTaskGetTickCount(); /* Step 5.4 起换成 RTC 日历时间 */
+      s.tstamp = (uint32_t)nowTick;             /* 下面按 RTC 状态填写 */
       s.ax     = ax;
       s.ay     = ay;
       s.az     = az;
@@ -98,6 +101,19 @@ static void MotionTask(void *argument)
       if (ps_st == 1u)           { s.flags |= SAMPLE_F_PS_OVF; }
       else if (ps_st != 0u)      { s.flags |= SAMPLE_F_PS_ERR; }
       if (acc_st != 0u)          { s.flags |= SAMPLE_F_ACC_ERR; }
+
+      /* 时间戳：RTC 已校时 → 2000-01-01 起的秒数 + flags bit15；
+         未校时（没电/从未设置）→ 退化为上电 tick(ms)，bit15 保持 0 以示区分 */
+      {
+        uint32_t epoch = 0u;
+
+        if (Rtc_GetEpoch(&epoch) != 0u)
+        {
+          s.tstamp = epoch;
+          s.flags |= SAMPLE_F_TS_REAL;
+        }
+      }
+
       memset(s.rsv, 0, sizeof(s.rsv));
       s.crc = 0u;
     }
@@ -111,6 +127,7 @@ static void MotionTask(void *argument)
     /* 4) 更新"最新快照"缓存（给 live 命令用） */
     taskENTER_CRITICAL();
     s_latest     = s;
+    s_latestTick = nowTick;
     s_haveLatest = 1u;
     taskEXIT_CRITICAL();
 
@@ -145,22 +162,24 @@ uint8_t Sample_GetLatest(Sample_t *out, uint32_t *age_ms)
 
   taskENTER_CRITICAL();
   have = s_haveLatest;
-  *out = s_latest;
-  t    = s_latest.tstamp;
+  *out = s_latest;				//注意：out 在 have 判断之前就被赋值
+  t    = (uint32_t)s_latestTick;
   taskEXIT_CRITICAL();
 
 
 	//如果have 不是 1，说明没更新s_latest
-  if (have == 0u)
+	if (have == 0u)		//s_haveLatest == 1 才能获得最新的Sample
   {
     return 1u;
   }
 
-  if (age_ms != NULL)
+  if (age_ms != NULL)		//防止传入空地址
   {
-	  *age_ms = (uint32_t)(now - (TickType_t)t);		//t是上个s的xTaskGetTickCount
+	  //获取新鲜度
+	  *age_ms = (uint32_t)(now - (TickType_t)t);		//t是上个s的xTaskGetTickCount（Ticks）
   }
   return 0u;
+  //成功return 0u;
 }
 
 uint16_t Sample_QueueCount(void)
@@ -169,7 +188,7 @@ uint16_t Sample_QueueCount(void)
   {
     return 0u;
   }
-  return (uint16_t)uxQueueMessagesWaiting(s_logQueue);
+  return (uint16_t)uxQueueMessagesWaiting(s_logQueue);			//尚未被消费的消息数，(返回队列中存储的消息数)
 }
 
 uint16_t Sample_DropCount(void)
