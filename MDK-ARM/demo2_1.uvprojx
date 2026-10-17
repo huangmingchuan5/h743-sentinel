@@ -10,7 +10,7 @@
       <TargetName>demo2_1</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
-      <pCCUsed>6220000::V6.22::ARMCLANG</pCCUsed>
+      <pCCUsed>5060960::V5.06 update 7 (build 960)::.\ARM_Compiler_5.06u7</pCCUsed>
       <uAC6>0</uAC6>
       <TargetOption>
         <TargetCommonOption>
@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_PWR_LDO_SUPPLY,USE_HAL_DRIVER,STM32H743xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;..\App\Config;..\App\console;..\App\log;..\BSP\ee;..\BSP\flash;..\BSP\LED;..\BSP\pwm;..\BSP\uart;..\FreeRTOS\include;..\FreeRTOS\port;..\User;..\BSP\i2c;..\BSP\sensor</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;..\App\Config;..\App\console;..\App\log;..\BSP\ee;..\BSP\flash;..\BSP\LED;..\BSP\pwm;..\BSP\uart;..\FreeRTOS\include;..\FreeRTOS\port;..\User;..\BSP\i2c;..\BSP\sensor;..\App\sample</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -633,6 +633,11 @@
               <FileName>app_freertos_hooks.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\App\app_freertos_hooks.c</FilePath>
+            </File>
+            <File>
+              <FileName>sample_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\sample\sample_task.c</FilePath>
             </File>
           </Files>
         </Group>

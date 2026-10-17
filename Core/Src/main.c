@@ -32,6 +32,7 @@
 #include "bsp_i2c_bus.h"
 #include "bsp_ap3216c.h"
 #include "bsp_mpu6050.h"
+#include "sample_task.h"
 #include "console.h"
 #include "config.h"
 #include "bsp_qspi_flash.h"
@@ -231,6 +232,9 @@ int main(void)
     printf("rtos   : create CON task failed\r\n");
   }
 
+  /* Step 5.3：采样链路（logQueue + EnvTask + MotionTask） */
+  Sample_Start();
+
   printf("rtos   : starting scheduler...\r\n");
   vTaskStartScheduler();		//创建IdleTask和软件定时器任务
 
@@ -346,12 +350,14 @@ static void MonTask(void *argument)
     TickType_t tickNow = xTaskGetTickCount();
     uint32_t   halNow  = HAL_GetTick();
 
-    Uart_Printf("[rtos=%lu (+%lu)] [hal=%lu (+%lu)] free=%u min=%u rxdrop=%u\r\n",
+    Uart_Printf("[rtos=%lu (+%lu)] [hal=%lu (+%lu)] free=%u min=%u rxdrop=%u q=%u drop=%u\r\n",
                 (unsigned long)tickNow, (unsigned long)(tickNow - prevTick),
                 (unsigned long)halNow,  (unsigned long)(halNow - prevHal),
                 (unsigned)xPortGetFreeHeapSize(),
                 (unsigned)xPortGetMinimumEverFreeHeapSize(),
-                (unsigned)Uart_RxDropped());
+                (unsigned)Uart_RxDropped(),
+                (unsigned)Sample_QueueCount(),
+                (unsigned)Sample_DropCount());
 
     prevTick = tickNow;
     prevHal  = halNow;

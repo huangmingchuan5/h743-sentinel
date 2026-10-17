@@ -21,6 +21,7 @@
 #include "bsp_i2c_bus.h"
 #include "bsp_ap3216c.h"
 #include "bsp_mpu6050.h"
+#include "sample_task.h"
 #include <stdio.h>
 
 #define CONSOLE_LINE_MAX         80u   /* 行缓冲大小，包含 '\0'（log 要放 60 字节正文） */
@@ -55,6 +56,7 @@ static void        Cmd_Clear(const char *arg);
 static void        Cmd_I2c(const char *arg);
 static const char *I2c_AddrName(uint8_t addr7);
 static void        Cmd_Sensor(const char *arg);
+static void        Cmd_Live(const char *arg);
 static void        Trim_Tail(char *s);
 static char        Lower(char c);
 static uint8_t     Str_EqualNoCase(const char *a, const char *b);
@@ -163,6 +165,7 @@ static void Help_Print(void)
   Uart_Printf("  dump | clear                    list all / erase the log area\r\n");
   Uart_Printf("  i2c scan                        probe the I2C bus and list devices\r\n");
   Uart_Printf("  sensor                          one-shot read of ALS/PS/accelerometer\r\n");
+  Uart_Printf("  live [n]                        print the latest 20Hz sample (n times)\r\n");
 }
 
 static void Cmd_Color(const char *arg)
@@ -490,8 +493,58 @@ static void Cmd_Sensor(const char *arg)
   }
 }
 
+/* live [n]：打印"最新快照"（时间戳/光照/接近/加速度/新鲜度）。
+   不带参数打一行；live 5 连续打 5 行（约 100ms 一行）。 */
+static void Cmd_Live(const char *arg)
+{
+  uint32_t n = 1u;
+  uint32_t i;
+
+  if (*arg != '\0')
+  {
+    if ((Parse_U32(arg, &n) == 0u) || (n == 0u))
+    {
+      Uart_Printf("ERR usage: live [count 1..200]\r\n");
+      return;
+    }
+    if (n > 200u)
+    {
+      n = 200u;
+    }
+  }
+
+  for (i = 0u; i < n; i++)
+  {
+    Sample_t s;
+    uint32_t age = 0u;
+
+    if (Sample_GetLatest(&s, &age) != 0u)
+    {
+      Uart_Printf("live: no sample yet (report as bug if sampling tasks are running)\r\n");
+      return;
+    }
+
+    Uart_Printf("[t=%lu age=%lums] als=%u ps=%u near=%u acc=(%d,%d,%d) flags=0x%04X q=%u/%u drop=%u\r\n",
+                (unsigned long)s.tstamp,
+                (unsigned long)age,
+                (unsigned)s.als,
+                (unsigned)(s.ps & 0x03FFu),
+                (unsigned)((s.ps >> 15) & 1u),
+                (int)s.ax, (int)s.ay, (int)s.az,
+                (unsigned)s.flags,
+                (unsigned)Sample_QueueCount(), (unsigned)SAMPLE_QUEUE_LEN,
+                (unsigned)Sample_DropCount());
+
+    if ((i + 1u) < n)
+    {
+      vTaskDelay(pdMS_TO_TICKS(100));   /* 连续打印时约 100ms 一行 */
+    }
+  }
+}
 
 
+
+//匹配并执行相对应命令函数
 static void Dispatch(char *cmd, char *arg)
 {
   if (Str_EqualNoCase(cmd, "help") != 0u)
@@ -537,6 +590,10 @@ static void Dispatch(char *cmd, char *arg)
   else if (Str_EqualNoCase(cmd, "sensor") != 0u)
   {
     Cmd_Sensor(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "live") != 0u)
+  {
+    Cmd_Live(arg);
   }
   else
   {
