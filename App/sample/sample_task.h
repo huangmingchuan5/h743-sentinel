@@ -17,6 +17,8 @@
 #define __SAMPLE_TASK_H
 
 #include "main.h"
+#include "FreeRTOS.h"
+#include "queue.h"
 
 #define SAMPLE_QUEUE_LEN   128u   /* logQueue：128 槽 × 32B（@20Hz 约 6.4 秒缓冲） */
 #define SAMPLE_PERIOD_MS   50u    /* MotionTask 周期：50ms = 20Hz */
@@ -59,5 +61,8 @@ uint16_t Sample_QueueCount(void);
 
 /** 统计：因队列满而丢掉的快照数（Step 6 接上 LoggerTask 后应停止增长）。 */
 uint16_t Sample_DropCount(void);
+
+/** logQueue 的句柄（给 LoggerTask 消费用）。 */
+QueueHandle_t Sample_QueueHandle(void);
 
 #endif /* __SAMPLE_TASK_H */

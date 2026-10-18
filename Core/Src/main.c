@@ -191,7 +191,8 @@ int main(void)
 
       if (Log_Init() == FLASH_OK)
       {
-        printf("log    : %u record(s)\r\n", (unsigned)Log_GetCount());
+        printf("log    : %lu record(s), ring %lu slots\r\n",
+               (unsigned long)Log_GetCount(), (unsigned long)LOG_CAPACITY);
       }
       else
       {
@@ -260,6 +261,9 @@ int main(void)
 
   /* Step 5.3：采样链路（logQueue + EnvTask + MotionTask） */
   Sample_Start();
+
+  /* Step 6：日志写盘任务（消费 logQueue） */
+  Log_Start();
 
   printf("rtos   : starting scheduler...\r\n");
   vTaskStartScheduler();		//创建IdleTask和软件定时器任务

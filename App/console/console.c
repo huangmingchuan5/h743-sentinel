@@ -51,9 +51,8 @@ static void        Cmd_Pwm(const char *arg);
 static void        Cmd_Save(const char *arg);
 static void        Cmd_Load(const char *arg);
 static void        Cmd_Info(const char *arg);
-static void        Cmd_Log(const char *arg);
 static void        Cmd_Dump(const char *arg);
-static void        Cmd_Clear(const char *arg);
+static void        Cmd_Erase(const char *arg);
 static void        Cmd_I2c(const char *arg);
 static const char *I2c_AddrName(uint8_t addr7);
 static void        Cmd_Sensor(const char *arg);
@@ -164,8 +163,8 @@ static void Help_Print(void)
   Uart_Printf("  pwm 0..100                      set the brightness in percent\r\n");
   Uart_Printf("  info                            show state + raw EEPROM bytes\r\n");
   Uart_Printf("  save | load                     store / restore the config\r\n");
-  Uart_Printf("  log <text>                      append one record (max 60 bytes)\r\n");
-  Uart_Printf("  dump | clear                    list all / erase the log area\r\n");
+  Uart_Printf("  dump [n|all]                    print snapshot log (newest n; default 20)\r\n");
+  Uart_Printf("  erase                           erase the snapshot log (logical reset)\r\n");
   Uart_Printf("  i2c scan                        probe the I2C bus and list devices\r\n");
   Uart_Printf("  sensor                          one-shot read of ALS/PS/accelerometer\r\n");
   Uart_Printf("  live [n]                        print the latest 20Hz sample (n times)\r\n");
@@ -292,7 +291,8 @@ static void Cmd_Info(const char *arg)
 
   Uart_Printf("color      = %s\r\n", Color_Name((uint8_t)Console_GetColor()));
   Uart_Printf("brightness = %u %%\r\n", (unsigned)Console_GetBrightness());
-  Uart_Printf("log count  = %u\r\n", (unsigned)Log_GetCount());
+  Uart_Printf("log count  = %lu (available %lu)\r\n",
+              (unsigned long)Log_GetCount(), (unsigned long)Log_GetAvailable());
 
   st = Ee_Read(CFG_ADDR, b, CFG_SIZE);
   if (st == EE_OK)
@@ -310,89 +310,116 @@ static void Cmd_Info(const char *arg)
   }
 }
 
-/* log <文字>：往 Flash 里追加一条记录 */
-static void Cmd_Log(const char *arg)
-{
-  uint8_t st;
-
-  if (*arg == '\0')
-  {
-    Uart_Printf("ERR usage: log <text>  (max %u bytes)\r\n", (unsigned)LOG_TEXT_MAX);
-    return;
-  }
-
-  st = Log_Append(arg);
-  if (st == 0u)
-  {
-    Uart_Printf("OK  log #%u saved", (unsigned)Log_GetCount());
-    if (arg[LOG_TEXT_MAX] != '\0')   /* 输入比 60 字节长，被截断了 */
-    {
-      Uart_Printf("(text cut to %u bytes)", (unsigned)LOG_TEXT_MAX);
-    }
-    Uart_Printf("\r\n");
-  }
-  else if (st == 1u)
-  {
-    Uart_Printf("ERR log area is full (%u records), use 'clear'\r\n",
-           (unsigned)LOG_MAX_RECORDS);
-  }
-  else
-  {
-    Uart_Printf("ERR flash write failed (0x%02X)\r\n", (unsigned)st);
-  }
-}
-
-/* dump：按序号打印全部记录 */
+/* dump [n|all]：按时间顺序打印快照日志（默认最近 20 条）。
+   分块读取（一次 8 条）——读锁不跨输出。 */
 static void Cmd_Dump(const char *arg)
 {
-  uint8_t  rec[LOG_RECORD_SIZE];
-  char     text[LOG_TEXT_MAX + 1u];
-  uint16_t n = Log_GetCount();
-  uint16_t i;
+  uint32_t avail = Log_GetAvailable();
+  uint32_t count;
+  uint32_t first;
+  uint32_t done;
+  Sample_t buf[8];
 
-  (void)arg;
-
-  if (n == 0u)
+  if (avail == 0u)
   {
     Uart_Printf("(no records)\r\n");
     return;
   }
 
-  for (i = 0u; i < n; i++)
+  if (*arg == '\0')
   {
-    if (Log_ReadAt(i, rec) != FLASH_OK)
-    {
-      Uart_Printf("ERR read record #%u failed\r\n", (unsigned)(i + 1u));
-      return;
-    }
-
-    (void)Log_TextOf(rec, text, (uint16_t)sizeof(text));
-    Uart_Printf("#%u  %s\r\n", (unsigned)(i + 1u), text);
+    count = 20u;
   }
-
-  Uart_Printf("total %u record(s)\r\n", (unsigned)n);
-}
-
-/* clear：擦掉整个日志区并把条数清零（EEPROM 也一起更新） */
-static void Cmd_Clear(const char *arg)
-{
-  uint8_t st;
-
-  (void)arg;
-
-  st = Log_Clear();
-  if (st != FLASH_OK)
+  else if (Str_EqualNoCase(arg, "all") != 0u)
   {
-    Uart_Printf("ERR flash erase failed (0x%02X)\r\n", (unsigned)st);
+    count = avail;
+  }
+  else if ((Parse_U32(arg, &count) == 0u) || (count == 0u))
+  {
+    Uart_Printf("ERR usage: dump [n|all]\r\n");
     return;
   }
 
-  if (Config_Save() != EE_OK)        /* 把"条数 = 0"写进 EEPROM，保持两边一致 */
+  if (count > avail)
   {
-    Uart_Printf("WARN log cleared, but config write failed\r\n");
+    count = avail;
+  }
+  first = avail - count;                 /* 默认显示最近 count 条 */
+
+  if ((count >= avail) && (count > 200u))
+  {
+    Uart_Printf("dump: warning - 'all' may take a long time\r\n");
   }
 
-  Uart_Printf("OK  log area erased\r\n");
+  Uart_Printf("dump: %lu available, showing %lu (from index %lu)\r\n",
+              (unsigned long)avail, (unsigned long)count, (unsigned long)first);
+
+  for (done = 0u; done < count; )
+  {
+    uint32_t n = count - done;
+    uint32_t k;
+    uint8_t  st;
+
+    if (n > 8u)
+    {
+      n = 8u;
+    }
+
+    st = Log_FillDump(first + done, n, buf);
+    if (st != 0u)
+    {
+      Uart_Printf("ERR log read failed (%u) at index %lu\r\n",
+                  (unsigned)st, (unsigned long)(first + done));
+      return;
+    }
+
+    for (k = 0u; k < n; k++)
+    {
+      char tsbuf[24];
+
+      if ((buf[k].flags & SAMPLE_F_TS_REAL) != 0u)
+      {
+        Rtc_FormatEpoch(buf[k].tstamp, tsbuf, (uint16_t)sizeof(tsbuf));
+      }
+      else
+      {
+        (void)snprintf(tsbuf, sizeof(tsbuf), "t=%lums", (unsigned long)buf[k].tstamp);
+      }
+
+      Uart_Printf("#%lu %s als=%u ps=%u near=%u acc=(%d,%d,%d) f=0x%04X\r\n",
+                  (unsigned long)buf[k].seq,
+                  tsbuf,
+                  (unsigned)buf[k].als,
+                  (unsigned)(buf[k].ps & 0x03FFu),
+                  (unsigned)((buf[k].ps >> 15) & 1u),
+                  (int)buf[k].ax, (int)buf[k].ay, (int)buf[k].az,
+                  (unsigned)buf[k].flags);
+    }
+
+    done += n;
+  }
+
+  Uart_Printf("dump: done (%lu record(s))\r\n", (unsigned long)count);
+}
+
+/* erase（clear 为旧名别名）：逻辑擦除日志——只重置元数据与写指针，
+   不整片擦 32MB（秒级完成），旧数据随后被新数据逐步覆盖。 */
+static void Cmd_Erase(const char *arg)
+{
+  (void)arg;
+
+  if (Log_Erase() != LOG_OK)
+  {
+    Uart_Printf("ERR log erase failed\r\n");
+    return;
+  }
+
+  if (Config_Save() != EE_OK)
+  {
+    Uart_Printf("WARN log erased, but config write failed\r\n");
+  }
+
+  Uart_Printf("OK    : log erased (seq reset, ring starts empty)\r\n");
 }
 
 /* i2c scan：探测 0x08..0x77 所有 7 位地址，列出有应答的器件。
@@ -733,7 +760,7 @@ static void Cmd_Qtest(const char *arg)
       }
     }
 
-    if (i == FLASH_PAGE_SIZE)
+    if (i == FLASH_PAGE_SIZE)		//说明全部匹配，不然上面break
     {
       Uart_Printf("  0x%08lX  OK\r\n", (unsigned long)a);
     }
@@ -774,17 +801,13 @@ static void Dispatch(char *cmd, char *arg)
   {
     Cmd_Info(arg);
   }
-  else if (Str_EqualNoCase(cmd, "log") != 0u)
-  {
-    Cmd_Log(arg);
-  }
   else if (Str_EqualNoCase(cmd, "dump") != 0u)
   {
     Cmd_Dump(arg);
   }
-  else if (Str_EqualNoCase(cmd, "clear") != 0u)
+  else if ((Str_EqualNoCase(cmd, "erase") != 0u) || (Str_EqualNoCase(cmd, "clear") != 0u))
   {
-    Cmd_Clear(arg);
+    Cmd_Erase(arg);
   }
   else if (Str_EqualNoCase(cmd, "i2c") != 0u)
   {

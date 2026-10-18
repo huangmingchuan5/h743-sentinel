@@ -12,6 +12,7 @@
 #include "bsp_ap3216c.h"
 #include "bsp_mpu6050.h"
 #include "bsp_rtc.h"
+#include "log.h"
 #include <string.h>
 
 /* 环境缓存：EnvTask 写、MotionTask 读，两侧都用临界区保护 */
@@ -119,7 +120,11 @@ static void MotionTask(void *argument)
     }
 
     /* 3) 入队：不阻塞——队列满就丢这一拍并计数（Step 6 接上 LoggerTask 后会归零） */
-    if (xQueueSend(s_logQueue, &s, 0u) != pdPASS)
+    if (xQueueSend(s_logQueue, &s, 0u) == pdPASS)
+    {
+      Log_Notify();                     /* 叫醒 LoggerTask 来收这一条 */
+    }
+    else
     {
       s_dropCount++;
     }
@@ -194,4 +199,9 @@ uint16_t Sample_QueueCount(void)
 uint16_t Sample_DropCount(void)
 {
   return s_dropCount;
+}
+
+QueueHandle_t Sample_QueueHandle(void)
+{
+  return s_logQueue;
 }
