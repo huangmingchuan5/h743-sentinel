@@ -70,6 +70,16 @@ I2C4 (共享总线, i2cMutex)
 | `configCHECK_FOR_STACK_OVERFLOW` | 2 | 调试期开启 |
 | 时间戳 | RTC 日历 / 上电 tick | 无有效 RTC 时退化为 boot tick，`flags` bit15 = 0 标识 |
 
+### 资源占用（AC5 V5.06u7 实编译）
+
+| 项 | 大小 |
+|---|---|
+| Code | 47.9 KB |
+| RO-data | 1.7 KB |
+| RW-data | 0.2 KB |
+| ZI-data | 51.3 KB（含 48 KB FreeRTOS heap） |
+| 编译结果 | **0 Error(s), 0 Warning(s)** |
+
 ---
 
 ## 串口命令
