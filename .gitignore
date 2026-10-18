@@ -1,11 +1,27 @@
-# Keil MDK 构建产物与本地文件（源码、驱动、工程文件都会保留）
+# ---- Keil MDK 构建产物与本地文件 ----
 Objects/
 Listings/
-*.build_log.htm
-*.uvguix.*
-*.bak
-*.dep
-
-# 新 Keil 工程（demo2_1）的构建输出目录与列表文件
 MDK-ARM/demo2_1/
 MDK-ARM/*.lst
+MDK-ARM/*.uvoptx
+*.build_log.htm
+*.dep
+*.bak
+*.uvguix.*
+JLinkLog.txt
+JLinkSettings.ini
+
+# ---- 未使用的 CMSIS 组件（工程未引用，见 THIRD_PARTY_NOTICES）----
+Drivers/CMSIS/DSP/
+Drivers/CMSIS/NN/
+Drivers/CMSIS/Core_A/
+Drivers/CMSIS/docs/
+Drivers/CMSIS/RTOS/
+Drivers/CMSIS/RTOS2/
+
+# ---- 系统 / 编辑器 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
