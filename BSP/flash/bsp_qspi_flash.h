@@ -3,9 +3,9 @@
   * @file    bsp_qspi_flash.h
   * @brief   W25Q256JV（32 MB，QUADSPI Bank1）驱动。
   *
-  *          只用"3 字节地址"指令：读 0x03 / 页写 0x02 / 4KB 扇区擦 0x20。
-  *          我们的日志区在最前面 16 KB（远小于 16 MB），这样能完全绕开
-  *          "4 字节地址模式"的麻烦。全部走间接模式，不用内存映射(XIP)。
+  *          上电后由 Flash_Init() 发 0xB7 进入"4 字节地址模式"，之后
+  *          读 0x03 / 页写 0x02 / 4KB 扇区擦 0x20 全部使用 32 位地址，
+  *          可以访问完整的 32 MB。全部走间接模式，不用内存映射(XIP)。
   ******************************************************************************
   */
 
@@ -28,6 +28,10 @@
 
 /** 读 JEDEC ID（W25Q256JV 应该是 0xEF4019）：0 = 成功。 */
 uint8_t Flash_ReadID(uint32_t *id);
+
+/** 上电初始化：读 JEDEC ID + 进入 4 字节地址模式（32MB 可寻址）。
+    id 可传 NULL。0 = 成功。 */
+uint8_t Flash_Init(uint32_t *id);
 
 /** 从地址 addr 连续读 len 字节。 */
 uint8_t Flash_Read(uint32_t addr, uint8_t *buf, uint32_t len);

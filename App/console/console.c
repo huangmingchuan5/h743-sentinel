@@ -59,6 +59,7 @@ static const char *I2c_AddrName(uint8_t addr7);
 static void        Cmd_Sensor(const char *arg);
 static void        Cmd_Live(const char *arg);
 static void        Cmd_Time(const char *arg);
+static void        Cmd_Qtest(const char *arg);
 static void        Trim_Tail(char *s);
 static char        Lower(char c);
 static uint8_t     Str_EqualNoCase(const char *a, const char *b);
@@ -169,6 +170,7 @@ static void Help_Print(void)
   Uart_Printf("  sensor                          one-shot read of ALS/PS/accelerometer\r\n");
   Uart_Printf("  live [n]                        print the latest 20Hz sample (n times)\r\n");
   Uart_Printf("  time [set YYYY-MM-DD hh:mm:ss]  show / set the RTC calendar\r\n");
+  Uart_Printf("  qtest                           QSPI 32MB R/W test at the 16MB boundary\r\n");
 }
 
 static void Cmd_Color(const char *arg)
@@ -672,6 +674,79 @@ static void Cmd_Time(const char *arg)
   Uart_Printf("ERR usage: time | time set YYYY-MM-DD hh:mm:ss | time clear\r\n");
 }
 
+/* qtest：QSPI 32MB 寻址标定——在 16MB 边界附近取 4 个地址做"擦-写-读回"。
+   注意：会擦除这 4 个 4KB 扇区（都在日志区之外，不影响已有日志）。 */
+static void Cmd_Qtest(const char *arg)
+{
+  static const uint32_t addrs[4] =
+  {
+    0x00F00000u,   /* 15MB：第一 bank 内 */
+    0x00FFF000u,   /* 16MB 边界的前一扇区 */
+    0x01000000u,   /* 16MB 边界后的第一扇区 */
+    0x01800000u    /* 24MB：第二 bank 内 */
+  };
+  uint8_t  wr[FLASH_PAGE_SIZE];
+  uint8_t  rd[FLASH_PAGE_SIZE];
+  uint8_t  k;
+  uint16_t i;
+
+  (void)arg;
+
+  Uart_Printf("qtest: erase+write+readback @ 4 addresses (~2-3 s)\r\n");
+
+  for (k = 0u; k < 4u; k++)
+  {
+    uint32_t a = addrs[k];
+    uint8_t  st;
+
+    for (i = 0u; i < FLASH_PAGE_SIZE; i++)
+    {
+      wr[i] = (uint8_t)((uint16_t)i ^ 0xA5u);
+    }
+
+    st = Flash_EraseSector(a);
+    if (st != FLASH_OK)
+    {
+      Uart_Printf("  0x%08lX  erase FAIL (%u)\r\n", (unsigned long)a, (unsigned)st);
+      continue;
+    }
+
+    st = Flash_PageWrite(a, wr, FLASH_PAGE_SIZE);
+    if (st != FLASH_OK)
+    {
+      Uart_Printf("  0x%08lX  write FAIL (%u)\r\n", (unsigned long)a, (unsigned)st);
+      continue;
+    }
+
+    st = Flash_Read(a, rd, FLASH_PAGE_SIZE);
+    if (st != FLASH_OK)
+    {
+      Uart_Printf("  0x%08lX  read FAIL (%u)\r\n", (unsigned long)a, (unsigned)st);
+      continue;
+    }
+
+    for (i = 0u; i < FLASH_PAGE_SIZE; i++)
+    {
+      if (rd[i] != wr[i])
+      {
+        break;
+      }
+    }
+
+    if (i == FLASH_PAGE_SIZE)
+    {
+      Uart_Printf("  0x%08lX  OK\r\n", (unsigned long)a);
+    }
+    else
+    {
+      Uart_Printf("  0x%08lX  MISMATCH at +%u (wrote 0x%02X, read 0x%02X)\r\n",
+                  (unsigned long)a, (unsigned)i, (unsigned)wr[i], (unsigned)rd[i]);
+    }
+  }
+
+  Uart_Printf("qtest: done\r\n");
+}
+
 //匹配并执行相对应命令函数
 static void Dispatch(char *cmd, char *arg)
 {
@@ -726,6 +801,10 @@ static void Dispatch(char *cmd, char *arg)
   else if (Str_EqualNoCase(cmd, "time") != 0u)
   {
     Cmd_Time(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "qtest") != 0u)
+  {
+    Cmd_Qtest(arg);
   }
   else
   {

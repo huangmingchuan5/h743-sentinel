@@ -185,9 +185,9 @@ int main(void)
   {
     uint32_t flash_id = 0u;
 
-    if (Flash_ReadID(&flash_id) == FLASH_OK)
+    if (Flash_Init(&flash_id) == FLASH_OK)
     {
-      printf("flash  : ID = %06X\r\n", (unsigned)flash_id);
+      printf("flash  : ID = %06X, 4-byte address mode\r\n", (unsigned)flash_id);
 
       if (Log_Init() == FLASH_OK)
       {

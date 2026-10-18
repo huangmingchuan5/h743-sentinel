@@ -6,6 +6,7 @@
   *          指令表：
   *            0x06 写使能 | 0x05 读状态1 | 0x9F 读 JEDEC ID
   *            0x03 读数据 | 0x02 页写     | 0x20 4KB 扇区擦除
+  *            0xB7 进入 4 字节地址模式（32MB 寻址）
   ******************************************************************************
   */
 
@@ -18,6 +19,7 @@
 #define FLASH_CMD_READ_DATA      0x03u
 #define FLASH_CMD_PAGE_PROGRAM   0x02u
 #define FLASH_CMD_SECTOR_ERASE   0x20u
+#define FLASH_CMD_ENTER_4BYTE    0xB7u
 
 /* 把命令结构体的公共字段填好：单线指令、不发地址/数据，其余都清空 
 *	QSPI 命令结构体初始化辅助函数。它的作用是先给 QSPI_CommandTypeDef 结构体赋予一个“基础模板”配置
@@ -27,7 +29,7 @@ static void Flash_FillCmd(QSPI_CommandTypeDef *cmd, uint8_t instr)
   cmd->Instruction        = instr;
   cmd->InstructionMode    = QSPI_INSTRUCTION_1_LINE;
   cmd->Address            = 0u;
-  cmd->AddressSize        = QSPI_ADDRESS_24_BITS;      /* 3 字节地址 */
+  cmd->AddressSize        = QSPI_ADDRESS_32_BITS;      /* 4 字节地址（Flash_Init 已进入 4 字节模式） */
   cmd->AddressMode        = QSPI_ADDRESS_NONE;
   cmd->AlternateBytes     = 0u;
   cmd->AlternateBytesSize = QSPI_ALTERNATE_BYTES_8_BITS;
@@ -50,6 +52,16 @@ static uint8_t Flash_WriteEnable(void)
   return (HAL_QSPI_Command(&hqspi, &cmd, FLASH_TIMEOUT_MS) == HAL_OK) ? FLASH_OK : FLASH_ERR;
 }
 
+/* 进入 4 字节地址模式（0xB7）：之后读/写/擦都用 32 位地址，可访问 32MB。
+   掉电后芯片回到 3 字节模式，所以每次开机都要发一次（重复发无副作用）。 */
+static uint8_t Flash_Enter4ByteMode(void)
+{
+  QSPI_CommandTypeDef cmd = {0};
+
+  Flash_FillCmd(&cmd, FLASH_CMD_ENTER_4BYTE);
+  return (HAL_QSPI_Command(&hqspi, &cmd, FLASH_TIMEOUT_MS) == HAL_OK) ? FLASH_OK : FLASH_ERR;
+}
+
 
 //在发送写（Write）或擦除（Erase）命令后，阻塞等待，直到 Flash 芯片内部操作完成（空闲）为止
 uint8_t Flash_WaitBusy(void)
@@ -69,6 +81,8 @@ uint8_t Flash_WaitBusy(void)
   poll.Interval        = 0x10u;
   poll.AutomaticStop   = QSPI_AUTOMATIC_STOP_ENABLE;
 
+  //HAL_QSPI_AutoPolling()函数已经包含了实现HAL_QSPI_Command()的配置结构体功能，同时进行轮询操作实现WaitBusy
+  //在发出擦除或编程命令后，等待Flash的“忙”状态位 (WIP, Write In Progress) 清零。
   return (HAL_QSPI_AutoPolling(&hqspi, &cmd, &poll, FLASH_TIMEOUT_MS) == HAL_OK) ? FLASH_OK : FLASH_ERR;
 }
 
@@ -85,6 +99,8 @@ uint8_t Flash_ReadID(uint32_t *id)
   {
     return FLASH_ERR;
   }
+
+  //接收数据放在数组buf里面
   if (HAL_QSPI_Receive(&hqspi, buf, FLASH_TIMEOUT_MS) != HAL_OK)
   {
     return FLASH_ERR;
@@ -93,6 +109,28 @@ uint8_t Flash_ReadID(uint32_t *id)
   //数据拼接
   *id = ((uint32_t)buf[0] << 16) | ((uint32_t)buf[1] << 8) | (uint32_t)buf[2];
   return FLASH_OK;
+}
+
+uint8_t Flash_Init(uint32_t *id)
+{
+  uint32_t jedec = 0u;
+  uint8_t  st;
+
+  st = Flash_ReadID(&jedec);
+	
+  if (st != FLASH_OK)
+  {
+    return st;
+  }	
+	
+  if (id != NULL)		//地址非空
+  {
+    *id = jedec;
+  }
+
+
+  //进入 4 字节地址模式"是整个初始化流程的最后一步
+  return Flash_Enter4ByteMode();
 }
 
 
@@ -108,7 +146,7 @@ uint8_t Flash_Read(uint32_t addr, uint8_t *buf, uint32_t len)
 
   Flash_FillCmd(&cmd, FLASH_CMD_READ_DATA);		//默认配置
   cmd.Address     = addr;
-  cmd.AddressMode = QSPI_ADDRESS_1_LINE;
+  cmd.AddressMode = QSPI_ADDRESS_1_LINE;		//地址用 1 根线（普通 SPI 方式）传输
   cmd.DataMode    = QSPI_DATA_1_LINE;
   cmd.NbData      = len;
 
