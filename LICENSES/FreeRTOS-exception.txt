@@ -1,0 +1,37 @@
+FreeRTOS GPL Exception
+=======================
+
+FreeRTOS V9.0.0 is distributed under the GNU General Public License version 2
+(GPLv2) **plus** the FreeRTOS exception.
+
+The notice reproduced verbatim from the head of every FreeRTOS V9.0.0 source
+file (`FreeRTOS/src/*.c`, `FreeRTOS/include/*.h`, `FreeRTOS/port/*`) reads:
+
+    FreeRTOS is free software; you can redistribute it and/or modify it under
+    the terms of the GNU General Public License (version 2) as published by the
+    Free Software Foundation >>>> AND MODIFIED BY <<<< the FreeRTOS exception.
+
+    >>!   NOTE: The modification to the GPL is included to allow you to     !<<
+    >>!   distribute a combined work that includes FreeRTOS without being   !<<
+    >>!   obliged to provide the source code for proprietary components     !<<
+    >>!   outside of the FreeRTOS kernel.                                   !<<
+
+    FreeRTOS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE.  Full license text is available on the following
+    link: http://www.freertos.org/a00114.html
+
+The authoritative, complete text of the exception is published by the FreeRTOS
+project at:
+
+    https://www.freertos.org/a00114.html
+
+The full text of GPLv2 is bundled in this directory as `GPL-2.0.txt`.
+
+Practical effect for this repository
+------------------------------------
+The exception permits distributing a combined work that includes the FreeRTOS
+kernel together with components released under other terms (here: MIT for the
+application code, BSD-3-Clause for ST HAL), without being obliged to publish
+those components' source under the GPL. The FreeRTOS kernel source itself
+remains under GPLv2 + exception.
