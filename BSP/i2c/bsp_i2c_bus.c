@@ -11,17 +11,25 @@
 #include "task.h"
 #include "semphr.h"
 
+#if (I2C_LOCK_TEST_SKIP == 0)
 static SemaphoreHandle_t s_i2cMutex = NULL;
+#endif
 
 void I2cBus_Init(void)
 {
+#if (I2C_LOCK_TEST_SKIP == 0)
   s_i2cMutex = xSemaphoreCreateMutex();				//创建互斥信号量
+#endif
 }
 
 
 //尝试获取 I2C 总线的访问权（互斥锁），互斥访问
 uint8_t I2cBus_Take(uint32_t timeout_ms)
 {
+#if (I2C_LOCK_TEST_SKIP != 0)
+  (void)timeout_ms;
+  return 1u;                       /* 故障注入：不加锁，直接放行 */
+#else
   if (s_i2cMutex == NULL)
   {
     return 1u;                     /* 还没创建：无需加锁 */
@@ -38,14 +46,17 @@ uint8_t I2cBus_Take(uint32_t timeout_ms)
   }
 
   return (xSemaphoreTake(s_i2cMutex, pdMS_TO_TICKS(timeout_ms)) == pdPASS) ? 1u : 0u;		//操作是进行消费信号量
+#endif
 }
 
 void I2cBus_Give(void)
 {
+#if (I2C_LOCK_TEST_SKIP == 0)
   if ((s_i2cMutex != NULL) && (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED))
   {
     (void)xSemaphoreGive(s_i2cMutex);
   }
+#endif
 }
 
 uint8_t I2cBus_Probe(uint8_t addr7)

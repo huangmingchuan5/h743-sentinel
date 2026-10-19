@@ -15,12 +15,33 @@
 #include "bsp_led.h"
 #include "pwm.h"
 #include "tim.h"                  /* htim6 和 TIM6 */
+#include "FreeRTOS.h"
+#include "task.h"
 
 #define BREATH_TICKS   200u       /* 200 × 10 ms = 2 秒一个完整呼吸周期 */
 
 static App_Color_t s_color      = COLOR_WHITE;   /* 上电默认：白光（LedTask 启动后会立刻接管颜色） */
 static uint8_t     s_brightness = 100u;          /* pwm 命令设的亮度（呼吸幅度上限） */
 static uint16_t    s_phase      = 0u;            /* 三角波位置：0 → 100 → 0 */
+static volatile LedMode_t s_mode = LED_MODE_NORMAL;
+static volatile uint16_t  s_blink = 0u;          /* 报警/写盘闪烁计数 */
+
+/* 状态变量既要被任务写、又要被 TIM6 中断读：临界区保护（调度器启动前为单线程，跳过） */
+static void Led_Lock(void)
+{
+  if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+  {
+    taskENTER_CRITICAL();
+  }
+}
+
+static void Led_Unlock(void)
+{
+  if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+  {
+    taskEXIT_CRITICAL();
+  }
+}
 
 /* 按"当前颜色 + 呼吸瞬时值"刷新三路 PWM */
 static void Led_Update(void)
@@ -65,18 +86,51 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
   else if (htim->Instance == TIM6)
   {
-    s_phase++;
-    if (s_phase >= BREATH_TICKS)
+    switch (s_mode)
     {
-      s_phase = 0u;
+      case LED_MODE_ALARM:               /* 红色快闪：100ms 亮 / 100ms 灭 */
+        s_blink = (uint16_t)((s_blink + 1u) % 20u);
+        Pwm_SetBrightness(PWM_CH_RED,   (s_blink < 10u) ? 100u : 0u);
+        Pwm_SetBrightness(PWM_CH_GREEN, 0u);
+        Pwm_SetBrightness(PWM_CH_BLUE,  0u);
+        break;
+
+      case LED_MODE_FLASH:               /* 蓝色慢闪：250ms 亮 / 250ms 灭 */
+        s_blink = (uint16_t)((s_blink + 1u) % 50u);
+        Pwm_SetBrightness(PWM_CH_RED,   0u);
+        Pwm_SetBrightness(PWM_CH_GREEN, 0u);
+        Pwm_SetBrightness(PWM_CH_BLUE,  (s_blink < 25u) ? 100u : 0u);
+        break;
+
+      case LED_MODE_NORMAL:
+      default:                           /* 呼吸灯 */
+        s_phase++;
+        if (s_phase >= BREATH_TICKS)
+        {
+          s_phase = 0u;
+        }
+        Led_Update();
+        break;
     }
-    Led_Update();
   }
+}
+
+void Led_SetMode(LedMode_t mode)
+{
+  Led_Lock();
+  if (s_mode != mode)
+  {
+    s_mode  = mode;
+    s_blink = 0u;
+  }
+  Led_Unlock();
 }
 
 void Led_Init(void)
 {
   Pwm_Init();                 /* 启动三路 PWM + TIM6 中断 */
+  s_mode  = LED_MODE_NORMAL;
+  s_blink = 0u;
   s_phase = 0u;
   Led_Update();               /* 先刷一次，不用等第一个中断 */
 }
@@ -90,13 +144,17 @@ void Led_AllOff(void)
 
 void Led_SetColor(App_Color_t color)
 {
+  Led_Lock();
   s_color = color;            /* 下一个呼吸中断（≤10 ms）就按新颜色输出 */
+  Led_Unlock();
 }
 
 void Led_SetBrightness(uint8_t brightness)
 {
   if (brightness <= 100u)
   {
+    Led_Lock();
     s_brightness = brightness;
+    Led_Unlock();
   }
 }

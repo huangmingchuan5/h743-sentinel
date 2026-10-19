@@ -62,6 +62,9 @@ void Log_Start(void);
 /** 采样任务入队后调用：通知 LoggerTask 来收数据。 */
 void Log_Notify(void);
 
+/** 报警/事件快照投递到 evtQueue（LoggerTask 优先落盘）。0 = 成功。 */
+uint8_t Log_EventSend(const Sample_t *evt);
+
 /** 本次 erase 以来写入的总条数（可能大于环形容量）。 */
 uint32_t Log_GetCount(void);
 
@@ -77,5 +80,8 @@ uint8_t Log_Erase(void);
 
 /** 批量写回读校验失败累计（诊断用）。 */
 uint16_t Log_GetWriteErrors(void);
+
+/** 暂停/恢复日志消费（仅测试用：暂停后 logQueue 会填满以验证 evtQueue 优先级）。 */
+void Log_SetPaused(uint8_t paused);
 
 #endif /* __LOG_H */

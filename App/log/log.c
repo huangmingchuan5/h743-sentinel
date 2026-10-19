@@ -10,6 +10,8 @@
 #include "task.h"
 #include "queue.h"
 #include "semphr.h"
+#include "app_events.h"
+#include "health.h"
 #include <string.h>
 
 #define LOG_META_MAGIC    0x534E5431u   /* "SNT1" */
@@ -34,6 +36,7 @@ typedef char LogMeta_SizeCheck_t[(sizeof(LogMeta_t) == LOG_META_SIZE) ? 1 : -1];
 /* ---- 运行状态 ---- */
 static SemaphoreHandle_t s_flashMutex  = NULL;
 static TaskHandle_t      s_loggerTask  = NULL;
+static QueueHandle_t     s_evtQueue    = NULL;
 static uint32_t          s_epoch       = 0u;
 static uint32_t          s_wrAddr      = 0u;   /* 下一条记录的绝对地址 */
 static uint32_t          s_seqNext     = 0u;
@@ -41,6 +44,7 @@ static uint32_t          s_recTotal    = 0u;
 static uint32_t          s_metaSector  = LOG_META_A_ADDR;  /* 当前检查点扇区基址 */
 static uint32_t          s_metaOffset  = 0u;   /* 扇区内下一个空槽偏移 */
 static uint16_t          s_writeErrors = 0u;
+static volatile uint8_t  s_paused      = 0u;
 
 /* -------------------------------------------------------------------------- */
 /* 基础工具                                                                    */
@@ -302,10 +306,19 @@ static void LoggerTask(void *argument)
     /* 采样任务每投递一条就通知一次；Step 7 起报警事件也会通知 */
     (void)ulTaskNotifyTake(pdTRUE, remain);
 
-    while ((n < LOG_BATCH_MAX) &&
-           (xQueueReceive(Sample_QueueHandle(), &batch[n], 0u) == pdPASS))
+    if (s_paused == 0u)
     {
-      n++;
+      /* 报警/事件优先：先清空 evtQueue，再收普通采样 */
+      while ((n < LOG_BATCH_MAX) &&
+             (xQueueReceive(s_evtQueue, &batch[n], 0u) == pdPASS))
+      {
+        n++;
+      }
+      while ((n < LOG_BATCH_MAX) &&
+             (xQueueReceive(Sample_QueueHandle(), &batch[n], 0u) == pdPASS))
+      {
+        n++;
+      }
     }
 
     now = xTaskGetTickCount();
@@ -315,9 +328,18 @@ static void LoggerTask(void *argument)
     {
       if (Log_Lock() != 0u)
       {
+        if (sysEvents != NULL)
+        {
+          (void)xEventGroupSetBits(sysEvents, EVT_FLASH_BUSY);
+        }
+
         if (Log_WriteBatchLocked(batch, n) == LOG_OK)
         {
           recsSinceMeta += n;
+        }
+        else if (sysEvents != NULL)
+        {
+          (void)xEventGroupSetBits(sysEvents, EVT_LOG_FULL);
         }
 
         /* 检查点：每 256 条或 30s 提交一次 */
@@ -329,6 +351,15 @@ static void LoggerTask(void *argument)
             recsSinceMeta = 0u;
             lastMeta = xTaskGetTickCount();
           }
+          else if (sysEvents != NULL)
+          {
+            (void)xEventGroupSetBits(sysEvents, EVT_LOG_FULL);
+          }
+        }
+
+        if (sysEvents != NULL)
+        {
+          (void)xEventGroupClearBits(sysEvents, EVT_FLASH_BUSY);
         }
         Log_Unlock();
       }
@@ -341,6 +372,8 @@ static void LoggerTask(void *argument)
       /* 没有待写数据：重置计时，避免 remain=0 时任务空转 */
       lastFlush = xTaskGetTickCount();
     }
+
+    Health_Report(HEALTH_LOG);
   }
 }
 
@@ -465,6 +498,7 @@ uint8_t Log_Init(void)
 void Log_Start(void)
 {
   s_flashMutex = xSemaphoreCreateMutex();
+  s_evtQueue   = xQueueCreate(16u, sizeof(Sample_t));
 
   (void)xTaskCreate(LoggerTask, "LOG", 320u, NULL, 2u, &s_loggerTask);
 }
@@ -475,6 +509,21 @@ void Log_Notify(void)
   {
     (void)xTaskNotifyGive(s_loggerTask);
   }
+}
+
+uint8_t Log_EventSend(const Sample_t *evt)
+{
+  if ((s_evtQueue == NULL) || (evt == NULL))
+  {
+    return 1u;
+  }
+  if (xQueueSend(s_evtQueue, evt, 0u) != pdPASS)
+  {
+    return 2u;
+  }
+
+  Log_Notify();
+  return 0u;
 }
 
 uint32_t Log_GetCount(void)
@@ -490,6 +539,11 @@ uint32_t Log_GetAvailable(void)
 uint16_t Log_GetWriteErrors(void)
 {
   return s_writeErrors;
+}
+
+void Log_SetPaused(uint8_t paused)
+{
+  s_paused = (paused != 0u) ? 1u : 0u;
 }
 
 uint8_t Log_FillDump(uint32_t startIndex, uint32_t n, Sample_t *out)
@@ -539,6 +593,10 @@ uint8_t Log_Erase(void)
   }
 
   s_epoch++;
+  if (sysEvents != NULL)
+  {
+    (void)xEventGroupClearBits(sysEvents, EVT_LOG_FULL);
+  }
   s_wrAddr   = LOG_DATA_BASE;
   s_seqNext  = 0u;
   s_recTotal = 0u;

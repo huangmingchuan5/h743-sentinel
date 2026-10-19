@@ -13,6 +13,9 @@
 #include "bsp_mpu6050.h"
 #include "bsp_rtc.h"
 #include "log.h"
+#include "alarm.h"
+#include "health.h"
+#include "config.h"
 #include <string.h>
 
 /* 环境缓存：EnvTask 写、MotionTask 读，两侧都用临界区保护 */
@@ -55,6 +58,10 @@ static void EnvTask(void *argument)
     s_env.als_st = als_st;
     s_env.ps_st  = ps_st;
     taskEXIT_CRITICAL();
+
+    /* 只有读取成功才参与报警判定：I2C 报错不能被当成"变暗" */
+    Alarm_FeedLight(als, (als_st == 0u) ? 1u : 0u);
+    Health_Report(HEALTH_ENV);
 
     vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(ENV_PERIOD_MS));
   }
@@ -136,7 +143,12 @@ static void MotionTask(void *argument)
     s_haveLatest = 1u;
     taskEXIT_CRITICAL();
 
-    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(SAMPLE_PERIOD_MS));
+    /* 读取失败时作废运动基线，避免恢复瞬间的"0 → 真实值"跳变误触发 */
+    Alarm_FeedMotion(ax, ay, az, (acc_st == 0u) ? 1u : 0u);
+    Health_Report(HEALTH_MOT);
+
+    /* 采样周期来自配置（cfg rate ...，20..200ms，默认 50ms=20Hz） */
+    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS((uint16_t)Config_GetRateMs()));
   }
 }
 

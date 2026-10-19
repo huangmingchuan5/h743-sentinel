@@ -29,6 +29,9 @@
 #define SAMPLE_F_PS_ERR    0x0002u   /* 本拍 PS 读取失败 */
 #define SAMPLE_F_PS_OVF    0x0004u   /* 本拍 PS 溢出（物体很近/强红外） */
 #define SAMPLE_F_ACC_ERR   0x0008u   /* 本拍加速度读取失败 */
+#define SAMPLE_F_EVT_LIGHT 0x0010u   /* 事件记录：光照报警触发 */
+#define SAMPLE_F_EVT_MOTION 0x0020u  /* 事件记录：运动报警触发 */
+#define SAMPLE_F_EVT_CLEAR 0x0040u   /* 事件记录：报警被清除 */
 #define SAMPLE_F_TS_REAL   0x8000u   /* bit15：1=时间戳是日历时间（RTC，Step 5.4）；0=相对 tick */
 
 /* 一条快照 == 未来日志记录的前身（32 字节，无填充空洞） */

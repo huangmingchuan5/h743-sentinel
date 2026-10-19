@@ -229,6 +229,22 @@ void TIM7_IRQHandler(void)
   /* USER CODE END TIM7_IRQn 1 */
 }
 
+/**
+  * @brief This function handles EXTI line0 interrupt (PA0 / KEY1).
+  */
+void EXTI0_IRQHandler(void)
+{
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
+}
+
+/**
+  * @brief This function handles EXTI line[15:10] interrupts (PC13 / KEY2).
+  */
+void EXTI15_10_IRQHandler(void)
+{
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13);
+}
+
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */

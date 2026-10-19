@@ -34,6 +34,10 @@
 #include "bsp_mpu6050.h"
 #include "sample_task.h"
 #include "bsp_rtc.h"
+#include "app_events.h"
+#include "alarm.h"
+#include "ui_task.h"
+#include "health.h"
 #include "console.h"
 #include "config.h"
 #include "bsp_qspi_flash.h"
@@ -129,6 +133,7 @@ int main(void)
   /* 打印上次复位原因（读后清除，便于下次判断）：
      POR=上电  BOR=掉电/欠压  PIN=复位引脚  SFT=软件复位  IWDG/WWDG=看门狗  LPWR=低功耗复位 */
   {
+    Health_SetResetFlags(RCC->RSR);    /* 保存原始标志，供 status 命令解码 */
     printf("rst    :");
     if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST)   != 0u) { printf(" POR"); }
     if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST)   != 0u) { printf(" BOR"); }
@@ -259,11 +264,21 @@ int main(void)
     printf("rtos   : create CON task failed\r\n");
   }
 
+  /* Step 7：先建事件组（采样/日志/报警都依赖它），再建报警与 UI */
+  AppEvents_Init();
+
   /* Step 5.3：采样链路（logQueue + EnvTask + MotionTask） */
   Sample_Start();
 
   /* Step 6：日志写盘任务（消费 logQueue） */
   Log_Start();
+
+  /* Step 7：报警判定与 UI（LED 模式、蜂鸣器 PI8、按键 PA0/PC13） */
+  Alarm_Init();
+  Ui_Start();
+
+  /* Step 8：健康监控 + IWDG（所有任务正常才喂狗） */
+  Health_Start();
 
   printf("rtos   : starting scheduler...\r\n");
   vTaskStartScheduler();		//创建IdleTask和软件定时器任务
@@ -354,6 +369,7 @@ static void LedTask(void *argument)
   for (;;)
   {
     Led_SetColor(ledOn ? COLOR_WHITE : COLOR_OFF);
+    Health_Report(HEALTH_LED);
     ledOn ^= 1u;		//取反
 	vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));   /* 绝对延时（自从上一次唤醒时间 开始延时，避免任务执行时间偏差）：500ms 一次，不累计漂移 */
   }
@@ -396,6 +412,7 @@ static void MonTask(void *argument)
     Uart_Write(listBuf, (uint16_t)strlen(listBuf));
     Uart_Printf("\r\n");
 
+    Health_Report(HEALTH_MON);
     vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(3000));  /* 3 s 一次 */
   }
 }

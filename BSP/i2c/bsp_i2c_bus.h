@@ -20,6 +20,13 @@
 #define I2C_BUS_PROBE_TIMEOUT_MS  3u     /* 单次器件探测超时 */
 #define I2C_BUS_ERR_BUSY          0x21u  /* 抢总线超时（各 I2C 驱动统一的"忙"错误码） */
 
+/* 故障注入开关（默认 0）：改成 1 后 Take/Give 变成空操作，用于做
+   "加锁 vs 不加锁"对照实验——并发访问 EEPROM 与传感器时会出现偶发 NACK，
+   live/dump 里的 ERR 标志会给出来。验证完务必改回 0。 */
+#ifndef I2C_LOCK_TEST_SKIP
+#define I2C_LOCK_TEST_SKIP        0
+#endif
+
 /** 调度器启动前调用：创建总线互斥量。 */
 void I2cBus_Init(void);
 

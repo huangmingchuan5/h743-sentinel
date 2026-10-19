@@ -1,10 +1,7 @@
 /**
   ******************************************************************************
   * @file    config.c
-  * @brief   EEPROM 配置项的打包/解包、保存与恢复。
-  *
-  *          这个文件不认识 I2C 寄存器（交给 bsp_ee），也不认识命令行
-  *          （交给 console），它只负责"这 8 个字节怎么解释"。
+  * @brief   EEPROM 配置项的打包/解包、保存与恢复（16B，magic + CRC16）。
   ******************************************************************************
   */
 
@@ -12,43 +9,116 @@
 #include "bsp_ee.h"
 #include "console.h"
 
-/* 日志条数：Day 3 的 Flash 模块会用 Config_SetCount() 更新它 */
-static uint16_t s_count = 0u;
+static uint16_t s_thrLight  = CFG_DEF_THR_LIGHT;
+static uint16_t s_thrMotion = CFG_DEF_THR_MOTION;
+static uint8_t  s_rateMs    = CFG_DEF_RATE_MS;
 
-/* 把当前系统状态打包成 8 字节 */
-static void Cfg_Pack(uint8_t *b)
+static uint16_t Cfg_Crc16(const uint8_t *data, uint32_t len)
 {
-  b[0] = (uint8_t)CFG_MAGIC0;
-  b[1] = (uint8_t)CFG_MAGIC1;
-  b[2] = (uint8_t)CFG_MAGIC2;
-  b[3] = (uint8_t)CFG_MAGIC3;						//前四个是魔数，固定的，检查有效性
-  b[4] = Console_GetColor();
-  b[5] = Console_GetBrightness();
-  b[6] = (uint8_t)(s_count & 0x00FFu);				//保留低八位
-  b[7] = (uint8_t)((s_count >> 8) & 0x00FFu);		//保留高八位
+  uint16_t crc = 0xFFFFu;
+  uint32_t i;
+
+  while (len-- > 0u)
+  {
+    crc ^= (uint16_t)((uint16_t)(*data++) << 8);
+    for (i = 0u; i < 8u; i++)
+    {
+      if ((crc & 0x8000u) != 0u)
+      {
+        crc = (uint16_t)((crc << 1) ^ 0x1021u);
+      }
+      else
+      {
+        crc = (uint16_t)(crc << 1);
+      }
+    }
+  }
+  return crc;
 }
 
-/* 把 8 字节还原成系统状态（设置颜色会立即刷新 LED）		(刚才的Cfg_pack函数的逆操作) */
-static void Cfg_Apply(const uint8_t *b)
+static void Cfg_Pack(uint8_t *b)
 {
-  s_count = (uint16_t)((((uint16_t)b[7]) << 8) | (uint16_t)b[6]);		//重新组合
-  Console_SetBrightness(b[5]);											//重新设置亮度和颜色
-  Console_SetColor(b[4]);
+  uint16_t crc;
+
+  b[0]  = 'P';
+  b[1]  = '0';
+  b[2]  = 'L';
+  b[3]  = '2';                        /* magic（旧版是 'G'，用于格式升级） */
+  b[4]  = CFG_VERSION;
+  b[5]  = Console_GetColor();
+  b[6]  = Console_GetBrightness();
+  b[7]  = s_rateMs;
+  b[8]  = (uint8_t)(s_thrLight & 0xFFu);
+  b[9]  = (uint8_t)((s_thrLight >> 8) & 0xFFu);
+  b[10] = (uint8_t)(s_thrMotion & 0xFFu);
+  b[11] = (uint8_t)((s_thrMotion >> 8) & 0xFFu);
+
+  crc = Cfg_Crc16(b, 12u);
+  b[12] = (uint8_t)(crc & 0xFFu);
+  b[13] = (uint8_t)((crc >> 8) & 0xFFu);
+  b[14] = 0u;
+  b[15] = 0u;
+}
+
+/* 1 = 内容有效并已生效；0 = 无效 */
+static uint8_t Cfg_Apply(const uint8_t *b)
+{
+  uint16_t crc;
+  uint8_t  color     = b[5];
+  uint8_t  brightness = b[6];
+  uint8_t  rate      = b[7];
+  uint16_t light     = (uint16_t)(((uint16_t)b[9] << 8) | (uint16_t)b[8]);
+  uint16_t motion    = (uint16_t)(((uint16_t)b[11] << 8) | (uint16_t)b[10]);
+
+  if ((b[0] != 'P') || (b[1] != '0') || (b[2] != 'L') || (b[3] != '2'))
+  {
+    return 0u;
+  }
+  if (b[4] != CFG_VERSION)
+  {
+    return 0u;
+  }
+
+  crc = (uint16_t)(((uint16_t)b[13] << 8) | (uint16_t)b[12]);
+  if (crc != Cfg_Crc16(b, 12u))
+  {
+    return 0u;
+  }
+
+  if ((color > (uint8_t)COLOR_WHITE) || (brightness > 100u))
+  {
+    return 0u;
+  }
+
+  if (rate < 20u)   { rate = 20u; }
+  if (rate > 200u)  { rate = 200u; }
+
+  Console_SetBrightness(brightness);
+  Console_SetColor(color);
+
+  s_rateMs    = rate;
+  s_thrLight  = light;
+  s_thrMotion = motion;
+  return 1u;
 }
 
 uint8_t Config_Save(void)
 {
-  uint8_t b[CFG_SIZE];													//8u
+  uint8_t b[CFG_SIZE];
 
-  Cfg_Pack(b);						//把当前系统状态打包成 8 字节放进b[8]
+  Cfg_Pack(b);
   return Ee_Write(CFG_ADDR, b, CFG_SIZE);
 }
 
 uint8_t Config_Reset(void)
 {
-  Console_SetBrightness((uint8_t)CFG_DEF_BRIGHTNESS);
-  Console_SetColor((uint8_t)CFG_DEF_COLOR);
-  s_count = 0u;
+  Console_SetBrightness(CFG_DEF_BRIGHTNESS);
+  Console_SetColor(CFG_DEF_COLOR);
+
+  s_rateMs    = CFG_DEF_RATE_MS;
+  s_thrLight  = CFG_DEF_THR_LIGHT;
+  s_thrMotion = CFG_DEF_THR_MOTION;
+
   return Config_Save();
 }
 
@@ -63,11 +133,9 @@ uint8_t Config_Load(void)
     return st;                          /* I2C 读失败，交给调用者打印 */
   }
 
-  //核对魔数
-  if ((b[0] != (uint8_t)CFG_MAGIC0) || (b[1] != (uint8_t)CFG_MAGIC1) ||
-      (b[2] != (uint8_t)CFG_MAGIC2) || (b[3] != (uint8_t)CFG_MAGIC3))
+  if (Cfg_Apply(b) == 0u)
   {
-    /* EEPROM 里是 0xFF 或别的旧数据：当第一次使用，写一份默认配置 */
+    /* 无效/旧格式：写一份默认配置 */
     st = Config_Reset();
     if (st != EE_OK)
     {
@@ -76,16 +144,43 @@ uint8_t Config_Load(void)
     return 1u;                          /* 1 = 用了默认值 */
   }
 
-  Cfg_Apply(b);		//把 8 字节还原成系统状态（设置颜色会立即刷新 LED）
   return 0u;
 }
 
-uint16_t Config_GetCount(void)
+uint16_t Config_GetThrLight(void)
 {
-  return s_count;
+  return s_thrLight;
 }
 
-void Config_SetCount(uint16_t count)
+uint16_t Config_GetThrMotion(void)
 {
-  s_count = count;
+  return s_thrMotion;
+}
+
+uint8_t Config_GetRateMs(void)
+{
+  return s_rateMs;
+}
+
+void Config_SetThrLight(uint16_t v)
+{
+  s_thrLight = v;
+}
+
+void Config_SetThrMotion(uint16_t v)
+{
+  s_thrMotion = v;
+}
+
+void Config_SetRateMs(uint8_t v)
+{
+  if (v < 20u)
+  {
+    v = 20u;
+  }
+  if (v > 200u)
+  {
+    v = 200u;
+  }
+  s_rateMs = v;
 }

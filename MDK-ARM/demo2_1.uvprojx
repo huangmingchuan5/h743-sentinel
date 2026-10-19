@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_PWR_LDO_SUPPLY,USE_HAL_DRIVER,STM32H743xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;..\App\Config;..\App\console;..\App\log;..\BSP\ee;..\BSP\flash;..\BSP\LED;..\BSP\pwm;..\BSP\uart;..\FreeRTOS\include;..\FreeRTOS\port;..\User;..\BSP\i2c;..\BSP\sensor;..\App\sample;..\BSP\rtc</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;..\App\Config;..\App\console;..\App\log;..\BSP\ee;..\BSP\flash;..\BSP\LED;..\BSP\pwm;..\BSP\uart;..\FreeRTOS\include;..\FreeRTOS\port;..\User;..\BSP\i2c;..\BSP\sensor;..\App\sample;..\BSP\rtc;..\App\system</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -564,6 +564,11 @@
               <FileType>1</FileType>
               <FilePath>..\Drivers\STM32H7xx_HAL_Driver\Src\stm32h7xx_hal_rtc_ex.c</FilePath>
             </File>
+            <File>
+              <FileName>stm32h7xx_hal_iwdg.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Drivers\STM32H7xx_HAL_Driver\Src\stm32h7xx_hal_iwdg.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -653,6 +658,26 @@
               <FileName>sample_task.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\App\sample\sample_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>alarm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\system\alarm.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_events.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\system\app_events.c</FilePath>
+            </File>
+            <File>
+              <FileName>health.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\system\health.c</FilePath>
+            </File>
+            <File>
+              <FileName>ui_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\system\ui_task.c</FilePath>
             </File>
           </Files>
         </Group>

@@ -23,6 +23,9 @@
 #include "bsp_mpu6050.h"
 #include "sample_task.h"
 #include "bsp_rtc.h"
+#include "alarm.h"
+#include "ui_task.h"
+#include "health.h"
 #include <stdio.h>
 
 #define CONSOLE_LINE_MAX         80u   /* 行缓冲大小，包含 '\0'（log 要放 60 字节正文） */
@@ -59,6 +62,12 @@ static void        Cmd_Sensor(const char *arg);
 static void        Cmd_Live(const char *arg);
 static void        Cmd_Time(const char *arg);
 static void        Cmd_Qtest(const char *arg);
+static void        Cmd_Alarm(const char *arg);
+static void        Cmd_Cfg(const char *arg);
+static void        Cmd_Status(const char *arg);
+static void        Cmd_Wd(const char *arg);
+static void        Cmd_LogPause(const char *arg);
+static uint8_t     ParseTwoU32(const char *s, uint32_t *a, uint32_t *b);
 static void        Trim_Tail(char *s);
 static char        Lower(char c);
 static uint8_t     Str_EqualNoCase(const char *a, const char *b);
@@ -170,6 +179,11 @@ static void Help_Print(void)
   Uart_Printf("  live [n]                        print the latest 20Hz sample (n times)\r\n");
   Uart_Printf("  time [set YYYY-MM-DD hh:mm:ss]  show / set the RTC calendar\r\n");
   Uart_Printf("  qtest                           QSPI 32MB R/W test at the 16MB boundary\r\n");
+  Uart_Printf("  alarm [clear|mute|unmute]       show / control the alarm\r\n");
+  Uart_Printf("  cfg [show|save|load|reset|...]  configuration (thr, rate)\r\n");
+  Uart_Printf("  status                          health / reset / alarm / log summary\r\n");
+  Uart_Printf("  wd test <s>                     stop feeding IWDG (demo reset)\r\n");
+  Uart_Printf("  logpause on|off                 pause logger (debug: fill logQueue)\r\n");
 }
 
 static void Cmd_Color(const char *arg)
@@ -247,9 +261,10 @@ static void Cmd_Save(const char *arg)
   st = Config_Save();
   if (st == EE_OK)
   {
-    Uart_Printf("OK  saved: color=%u brightness=%u count=%u\r\n",
-           (unsigned)Console_GetColor(), (unsigned)Console_GetBrightness(),
-           (unsigned)Config_GetCount());
+    Uart_Printf("OK  saved: color=%u brightness=%u rate=%ums thr=%u/%u\r\n",
+                (unsigned)Console_GetColor(), (unsigned)Console_GetBrightness(),
+                (unsigned)Config_GetRateMs(),
+                (unsigned)Config_GetThrLight(), (unsigned)Config_GetThrMotion());
   }
   else
   {
@@ -291,13 +306,16 @@ static void Cmd_Info(const char *arg)
 
   Uart_Printf("color      = %s\r\n", Color_Name((uint8_t)Console_GetColor()));
   Uart_Printf("brightness = %u %%\r\n", (unsigned)Console_GetBrightness());
+  Uart_Printf("rate       = %u ms\r\n", (unsigned)Config_GetRateMs());
+  Uart_Printf("threshold  = light %u / motion %u\r\n",
+              (unsigned)Config_GetThrLight(), (unsigned)Config_GetThrMotion());
   Uart_Printf("log count  = %lu (available %lu)\r\n",
               (unsigned long)Log_GetCount(), (unsigned long)Log_GetAvailable());
 
   st = Ee_Read(CFG_ADDR, b, CFG_SIZE);
   if (st == EE_OK)
   {
-    Uart_Printf("EEPROM[0..7] =");
+    Uart_Printf("EEPROM[0..15] =");
     for (i = 0u; i < CFG_SIZE; i++)
     {
       Uart_Printf(" %02X", (unsigned)b[i]);
@@ -774,6 +792,225 @@ static void Cmd_Qtest(const char *arg)
   Uart_Printf("qtest: done\r\n");
 }
 
+/* ---- 报警 / 配置 / 状态 / 看门狗 命令 ---- */
+
+/* 解析"两个十进制数（空格分隔）" */
+static uint8_t ParseTwoU32(const char *s, uint32_t *a, uint32_t *b)
+{
+  char     buf[16];
+  uint16_t n = 0u;
+
+  while (*s == ' ') { s++; }
+  while ((*s >= '0') && (*s <= '9') && (n < (uint16_t)(sizeof(buf) - 1u)))
+  {
+    buf[n++] = *s++;
+  }
+  buf[n] = '\0';
+  if ((n == 0u) || (Parse_U32(buf, a) == 0u)) { return 0u; }
+
+  while (*s == ' ') { s++; }
+  n = 0u;
+  while ((*s >= '0') && (*s <= '9') && (n < (uint16_t)(sizeof(buf) - 1u)))
+  {
+    buf[n++] = *s++;
+  }
+  buf[n] = '\0';
+  if ((n == 0u) || (Parse_U32(buf, b) == 0u)) { return 0u; }
+
+  while (*s == ' ') { s++; }
+  return (*s == '\0') ? 1u : 0u;
+}
+
+/* alarm：查看 / 清除 / 静音 */
+static void Cmd_Alarm(const char *arg)
+{
+  if (*arg == '\0')
+  {
+    uint32_t lat = 0u;
+
+    Uart_Printf("alarm : light=%u motion=%u muted=%u (thr light=%u motion=%u)\r\n",
+                (unsigned)Alarm_LightActive(), (unsigned)Alarm_MotionActive(),
+                (unsigned)Alarm_IsMuted(),
+                (unsigned)Config_GetThrLight(), (unsigned)Config_GetThrMotion());
+    if (Ui_GetAlarmLatency(&lat) != 0u)
+    {
+      Uart_Printf("alarm : last confirm->action = %lu ms\r\n", (unsigned long)lat);
+    }
+    return;
+  }
+  if (Str_EqualNoCase(arg, "clear") != 0u)
+  {
+    Alarm_Clear();
+    Uart_Printf("OK    : alarm cleared\r\n");
+    return;
+  }
+  if (Str_EqualNoCase(arg, "mute") != 0u)
+  {
+    Alarm_SetMuted(1u);
+    Uart_Printf("OK    : buzzer muted\r\n");
+    return;
+  }
+  if ((Str_EqualNoCase(arg, "unmute") != 0u) || (Str_EqualNoCase(arg, "resume") != 0u))
+  {
+    Alarm_SetMuted(0u);
+    Uart_Printf("OK    : buzzer unmuted\r\n");
+    return;
+  }
+  Uart_Printf("ERR usage: alarm [clear|mute|unmute]\r\n");
+}
+
+/* cfg：查看 / 保存 / 加载 / 恢复默认 / 修改阈值与采样周期 */
+static void Cmd_Cfg(const char *arg)
+{
+  if ((*arg == '\0') || (Str_EqualNoCase(arg, "show") != 0u))
+  {
+    Uart_Printf("cfg   : color=%u brightness=%u rate=%ums thr_light=%u thr_motion=%u\r\n",
+                (unsigned)Console_GetColor(), (unsigned)Console_GetBrightness(),
+                (unsigned)Config_GetRateMs(),
+                (unsigned)Config_GetThrLight(), (unsigned)Config_GetThrMotion());
+    return;
+  }
+
+  if (Str_EqualNoCase(arg, "save") != 0u)
+  {
+    Uart_Printf((Config_Save() == EE_OK) ? "OK    : cfg saved\r\n"
+                                         : "ERR   : EEPROM write failed\r\n");
+    return;
+  }
+
+  if (Str_EqualNoCase(arg, "load") != 0u)
+  {
+    uint8_t st = Config_Load();
+
+    if (st == 0u)      { Uart_Printf("OK    : cfg loaded\r\n"); }
+    else if (st == 1u) { Uart_Printf("OK    : no valid cfg, defaults written\r\n"); }
+    else               { Uart_Printf("ERR   : EEPROM read failed (0x%02X)\r\n", (unsigned)st); }
+    return;
+  }
+
+  if (Str_EqualNoCase(arg, "reset") != 0u)
+  {
+    Uart_Printf((Config_Reset() == EE_OK) ? "OK    : defaults restored & saved\r\n"
+                                          : "ERR   : EEPROM write failed\r\n");
+    return;
+  }
+
+  if ((Lower(arg[0]) == 't') && (Lower(arg[1]) == 'h') && (Lower(arg[2]) == 'r') &&
+      (arg[3] == ' '))
+  {
+    uint32_t a = 0u;
+    uint32_t b = 0u;
+
+    if ((ParseTwoU32(&arg[4], &a, &b) != 0u) && (a <= 65535u) && (b <= 65535u))
+    {
+      Config_SetThrLight((uint16_t)a);
+      Config_SetThrMotion((uint16_t)b);
+      Uart_Printf("OK    : thr set (run 'cfg save' to keep)\r\n");
+    }
+    else
+    {
+      Uart_Printf("ERR usage: cfg thr <light> <motion>\r\n");
+    }
+    return;
+  }
+
+  if ((Lower(arg[0]) == 'r') && (Lower(arg[1]) == 'a') && (Lower(arg[2]) == 't') &&
+      (Lower(arg[3]) == 'e') && (arg[4] == ' '))
+  {
+    uint32_t v = 0u;
+
+    if ((Parse_U32(&arg[5], &v) != 0u) && (v >= 20u) && (v <= 200u))
+    {
+      Config_SetRateMs((uint8_t)v);
+      Uart_Printf("OK    : rate=%u ms (run 'cfg save' to keep)\r\n", (unsigned)v);
+    }
+    else
+    {
+      Uart_Printf("ERR usage: cfg rate <20..200>\r\n");
+    }
+    return;
+  }
+
+  Uart_Printf("ERR usage: cfg [show|save|load|reset|thr <light> <motion>|rate <ms>]\r\n");
+}
+
+/* status：系统状态一屏（健康/复位原因/报警/日志/RTC） */
+static void Cmd_Status(const char *arg)
+{
+  uint32_t rsr;
+  uint32_t ep = 0u;
+  char     ts[24];
+
+  (void)arg;
+
+  rsr = Health_GetResetFlags();
+  Uart_Printf("status : up=%lu ms  health=%u  last_fail=%u\r\n",
+              (unsigned long)xTaskGetTickCount(),
+              (unsigned)Health_GetHealthy(), (unsigned)Health_GetLastFail());
+  Uart_Printf("status : reset flags=0x%08lX", (unsigned long)rsr);
+  if ((rsr & RCC_RSR_PORRSTF)   != 0u) { Uart_Printf(" POR"); }
+  if ((rsr & RCC_RSR_BORRSTF)   != 0u) { Uart_Printf(" BOR"); }
+  if ((rsr & RCC_RSR_PINRSTF)   != 0u) { Uart_Printf(" PIN"); }
+  if ((rsr & RCC_RSR_SFTRSTF)   != 0u) { Uart_Printf(" SFT"); }
+  if ((rsr & RCC_RSR_IWDG1RSTF) != 0u) { Uart_Printf(" IWDG"); }
+  if ((rsr & RCC_RSR_WWDG1RSTF) != 0u) { Uart_Printf(" WWDG"); }
+  if ((rsr & RCC_RSR_LPWRRSTF) != 0u) { Uart_Printf(" LPWR"); }
+  Uart_Printf("\r\n");
+  Uart_Printf("status : alarm light=%u motion=%u muted=%u\r\n",
+              (unsigned)Alarm_LightActive(), (unsigned)Alarm_MotionActive(),
+              (unsigned)Alarm_IsMuted());
+  Uart_Printf("status : log count=%lu avail=%lu err=%u q=%u drop=%u rxdrop=%u\r\n",
+              (unsigned long)Log_GetCount(), (unsigned long)Log_GetAvailable(),
+              (unsigned)Log_GetWriteErrors(),
+              (unsigned)Sample_QueueCount(), (unsigned)Sample_DropCount(),
+              (unsigned)Uart_RxDropped());
+  if ((Rtc_IsSet() != 0u) && (Rtc_GetEpoch(&ep) != 0u))
+  {
+    Rtc_FormatEpoch(ep, ts, (uint16_t)sizeof(ts));
+    Uart_Printf("status : rtc %s\r\n", ts);
+  }
+  else
+  {
+    Uart_Printf("status : rtc not set (tick timestamps)\r\n");
+  }
+}
+
+/* wd test <s>：停止喂狗 s 秒，演示 IWDG 复位（约 2s 后复位） */
+static void Cmd_Wd(const char *arg)
+{
+  uint32_t s = 0u;
+
+  if ((Lower(arg[0]) == 't') && (Lower(arg[1]) == 'e') &&
+      (Lower(arg[2]) == 's') && (Lower(arg[3]) == 't') && (arg[4] == ' ') &&
+      (Parse_U32(&arg[5], &s) != 0u) && (s >= 1u) && (s <= 60u))
+  {
+    Health_SetWdgTest(s);
+    Uart_Printf("WARN  : IWDG feeding stopped for %lu s (reset in ~2s)\r\n",
+                (unsigned long)s);
+    return;
+  }
+
+  Uart_Printf("ERR usage: wd test <1..60>\r\n");
+}
+
+/* logpause on|off：暂停/恢复日志消费（测试 evtQueue 优先级用） */
+static void Cmd_LogPause(const char *arg)
+{
+  if (Str_EqualNoCase(arg, "on") != 0u)
+  {
+    Log_SetPaused(1u);
+    Uart_Printf("OK    : logging paused (logQueue will fill)\r\n");
+    return;
+  }
+  if (Str_EqualNoCase(arg, "off") != 0u)
+  {
+    Log_SetPaused(0u);
+    Uart_Printf("OK    : logging resumed\r\n");
+    return;
+  }
+  Uart_Printf("ERR usage: logpause on|off\r\n");
+}
+
 //匹配并执行相对应命令函数
 static void Dispatch(char *cmd, char *arg)
 {
@@ -828,6 +1065,26 @@ static void Dispatch(char *cmd, char *arg)
   else if (Str_EqualNoCase(cmd, "qtest") != 0u)
   {
     Cmd_Qtest(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "alarm") != 0u)
+  {
+    Cmd_Alarm(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "cfg") != 0u)
+  {
+    Cmd_Cfg(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "status") != 0u)
+  {
+    Cmd_Status(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "wd") != 0u)
+  {
+    Cmd_Wd(arg);
+  }
+  else if (Str_EqualNoCase(cmd, "logpause") != 0u)
+  {
+    Cmd_LogPause(arg);
   }
   else
   {
@@ -965,7 +1222,8 @@ void ConsoleTask(void *argument)
   for (;;)
   {
 	  //这个任务本来就是一直等待RX接受回调函数释放出信号量，这里当作二值信号量获得，然后执行
-	  (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   /* 睡到"有数据"的通知为止 *///传入参数为pdTRUE==二值信号量；pdFALSE==计数信号量
+	  Health_Report(HEALTH_CON);
+	  (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));   /* 睡到"有数据"的通知为止 *///传入参数为pdTRUE==二值信号量；pdFALSE==计数信号量
 
     while ((c = Uart_RxGet()) >= 0)                  /* 一次取空 */
     {

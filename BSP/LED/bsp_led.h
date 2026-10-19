@@ -26,6 +26,17 @@ typedef enum
   COLOR_WHITE
 } App_Color_t;
 
+/* ---- 显示模式（UiTask 管理） ---- */
+typedef enum
+{
+  LED_MODE_NORMAL = 0,   /* 呼吸灯（颜色/亮度由 color/pwm 命令决定） */
+  LED_MODE_ALARM,        /* 报警：红色快闪（5Hz，满亮） */
+  LED_MODE_FLASH         /* 写盘：蓝色慢闪（2Hz，满亮） */
+} LedMode_t;
+
+/** 切换显示模式（内部临界区保护，TIM6 中断读它）。 */
+void Led_SetMode(LedMode_t mode);
+
 /** 启动三路 PWM 和 TIM6 呼吸中断；上电默认"绿色呼吸灯"。 */
 void Led_Init(void);
 
