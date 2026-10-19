@@ -9,6 +9,12 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+/* 调试开关：用调试器单步/长时间停断点时改成 0（或编译时 -DHEALTH_IWDG_ENABLE=0），
+   否则暂停超过 2 s 会被 IWDG 复位。发布与验收保持 1。 */
+#ifndef HEALTH_IWDG_ENABLE
+#define HEALTH_IWDG_ENABLE 1
+#endif
+
 /* 每个任务允许的最大"沉默时间"（ms）：周期 + 余量 */
 #define HEALTH_GAP_ENV    400u
 #define HEALTH_GAP_MOT    500u
@@ -18,7 +24,9 @@
 #define HEALTH_GAP_LED    2500u
 #define HEALTH_GAP_MON    5000u
 
+#if (HEALTH_IWDG_ENABLE != 0)
 static IWDG_HandleTypeDef s_hiwdg;
+#endif
 static volatile TickType_t s_last[HEALTH_COUNT];
 static volatile uint8_t    s_healthy    = 1u;
 static volatile uint8_t    s_lastFail   = 0xFFu;
@@ -88,7 +96,9 @@ static void HealthTask(void *argument)
 
     if ((ok != 0u) && (s_wdgOk != 0u))
     {
+#if (HEALTH_IWDG_ENABLE != 0)
       (void)HAL_IWDG_Refresh(&s_hiwdg);
+#endif
     }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -114,6 +124,7 @@ void Health_Start(void)
   }
 
   /* IWDG：LSI≈32kHz，64 分频 → 500Hz；重装 1000 → 超时 2s */
+#if (HEALTH_IWDG_ENABLE != 0)
   s_hiwdg.Instance       = IWDG1;
   s_hiwdg.Init.Prescaler = IWDG_PRESCALER_64;
   s_hiwdg.Init.Reload    = 1000u;
@@ -125,6 +136,9 @@ void Health_Start(void)
     return;
   }
   s_wdgOk = 1u;
+#else
+  s_wdgOk = 0u;                       /* 调试版：不启用看门狗 */
+#endif
 }
 
 uint8_t Health_GetHealthy(void)
