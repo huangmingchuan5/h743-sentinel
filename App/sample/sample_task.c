@@ -33,6 +33,7 @@ static Sample_t      s_latest     = {0};
 static TickType_t    s_latestTick = 0u;
 static uint8_t       s_haveLatest = 0u;
 static uint16_t      s_dropCount  = 0u;
+static uint16_t      s_qPeak      = 0u;   /* 队列积压峰值（验收指标：≤50% 深度） */
 
 /* -------------------------------------------------------------------------- */
 /* EnvTask：100ms 读一次 ALS/PS，更新环境缓存                                  */
@@ -136,6 +137,16 @@ static void MotionTask(void *argument)
       s_dropCount++;
     }
 
+    /* 队列积压峰值：给验收提供"队列峰值 ≤50%"的实测数据 */
+    {
+      uint16_t qc = (uint16_t)uxQueueMessagesWaiting(s_logQueue);
+
+      if (qc > s_qPeak)
+      {
+        s_qPeak = qc;
+      }
+    }
+
     /* 4) 更新"最新快照"缓存（给 live 命令用） */
     taskENTER_CRITICAL();
     s_latest     = s;
@@ -211,6 +222,11 @@ uint16_t Sample_QueueCount(void)
 uint16_t Sample_DropCount(void)
 {
   return s_dropCount;
+}
+
+uint16_t Sample_QueuePeak(void)
+{
+  return s_qPeak;
 }
 
 QueueHandle_t Sample_QueueHandle(void)

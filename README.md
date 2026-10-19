@@ -124,8 +124,8 @@ I2C4 (共享总线, i2cMutex)
 
 | 项 | 大小 |
 |---|---|
-| Code + RO-data | 55,340 + 2,168 = **57,508 B（≈56.2 KB）** |
-| RW-data + ZI-data | 308 + 53,636 = **53,944 B（≈52.7 KB）**，其中 48 KB 是 FreeRTOS heap |
+| Code + RO-data | 55,372 + 2,176 = **57,548 B（≈56.2 KB）** |
+| RW-data + ZI-data | 312 + 53,632 = **53,944 B（≈52.7 KB）**，其中 48 KB 是 FreeRTOS heap |
 | 编译结果 | **0 Error(s), 0 Warning(s)**（AC5 V5.06u7，全量编译 + 链接复核） |
 
 ---

@@ -65,6 +65,9 @@ uint16_t Sample_QueueCount(void);
 /** 统计：因队列满而丢掉的快照数（Step 6 接上 LoggerTask 后应停止增长）。 */
 uint16_t Sample_DropCount(void);
 
+/** 统计：logQueue 历史积压峰值（上电以来，验收指标：≤50% 深度）。 */
+uint16_t Sample_QueuePeak(void);
+
 /** logQueue 的句柄（给 LoggerTask 消费用）。 */
 QueueHandle_t Sample_QueueHandle(void);
 
