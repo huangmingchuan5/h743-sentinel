@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 512" width="100%" role="img" font-family="system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif">
+<title>H743 Sentinel 软件架构</title>
+<desc>三路 I2C 器件由 ENV/MOT 任务采样，经 logQueue 交给 LoggerTask 写入 QSPI Flash；报警走 evtQueue 优先落盘，UI 驱动声光，健康任务汇总后刷新 IWDG。</desc>
+<defs>
+<marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<rect x="0" y="0" width="1000" height="512" rx="14" fill="#FFFFFF"/>
+
+<g>
+<rect x="40" y="60" width="150" height="72" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+<text x="115" y="84" text-anchor="middle" font-size="14" font-weight="600" fill="#042C53">I2C4 三器件</text>
+<text x="115" y="104" text-anchor="middle" font-size="12" fill="#185FA5">AP3216C / MPU6050</text>
+<text x="115" y="121" text-anchor="middle" font-size="12" fill="#185FA5">24C02 · i2cMutex</text>
+</g>
+
+<g>
+<rect x="240" y="60" width="150" height="72" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+<text x="315" y="82" text-anchor="middle" font-size="14" font-weight="600" fill="#042C53">采样任务</text>
+<text x="315" y="101" text-anchor="middle" font-size="12" fill="#185FA5">ENV prio 6 · 100 ms</text>
+<text x="315" y="118" text-anchor="middle" font-size="12" fill="#185FA5">MOT prio 5 · 20 Hz</text>
+</g>
+
+<g>
+<rect x="440" y="60" width="150" height="72" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+<text x="515" y="84" text-anchor="middle" font-size="14" font-weight="600" fill="#04342C">logQueue</text>
+<text x="515" y="104" text-anchor="middle" font-size="12" fill="#0F6E56">128 × 32 B</text>
+<text x="515" y="121" text-anchor="middle" font-size="12" fill="#0F6E56">≈ 6.4 s 缓冲</text>
+</g>
+
+<g>
+<rect x="640" y="60" width="150" height="72" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+<text x="715" y="84" text-anchor="middle" font-size="14" font-weight="600" fill="#04342C">LoggerTask</text>
+<text x="715" y="104" text-anchor="middle" font-size="12" fill="#0F6E56">prio 2</text>
+<text x="715" y="121" text-anchor="middle" font-size="12" fill="#0F6E56">32 条 / 2 s 批量</text>
+</g>
+
+<g>
+<rect x="840" y="60" width="140" height="72" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+<text x="910" y="84" text-anchor="middle" font-size="14" font-weight="600" fill="#04342C">W25Q256 · 32 MB</text>
+<text x="910" y="104" text-anchor="middle" font-size="12" fill="#0F6E56">扇区 0/1 元数据 A/B</text>
+<text x="910" y="121" text-anchor="middle" font-size="12" fill="#0F6E56">扇区 2+ 数据环</text>
+</g>
+
+<g>
+<rect x="40" y="200" width="150" height="64" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"/>
+<text x="115" y="224" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">USART1 IRQ</text>
+<text x="115" y="243" text-anchor="middle" font-size="12" fill="#5F5E5A">256 B 环形缓冲</text>
+</g>
+
+<g>
+<rect x="240" y="200" width="150" height="64" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"/>
+<text x="315" y="224" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">ConsoleTask</text>
+<text x="315" y="243" text-anchor="middle" font-size="12" fill="#5F5E5A">prio 3 · 通知唤醒</text>
+</g>
+
+<g>
+<rect x="440" y="200" width="150" height="64" rx="10" fill="#FAEEDA" stroke="#BA7517" stroke-width="1"/>
+<text x="515" y="224" text-anchor="middle" font-size="14" font-weight="600" fill="#412402">Alarm 两段式</text>
+<text x="515" y="243" text-anchor="middle" font-size="12" fill="#854F0B">1 s 确认窗</text>
+</g>
+
+<g>
+<rect x="640" y="200" width="150" height="64" rx="10" fill="#FAEEDA" stroke="#BA7517" stroke-width="1"/>
+<text x="715" y="224" text-anchor="middle" font-size="14" font-weight="600" fill="#412402">evtQueue ×16</text>
+<text x="715" y="243" text-anchor="middle" font-size="12" fill="#854F0B">报警优先落盘</text>
+</g>
+
+<g>
+<rect x="440" y="300" width="150" height="64" rx="10" fill="#FAEEDA" stroke="#BA7517" stroke-width="1"/>
+<text x="515" y="324" text-anchor="middle" font-size="14" font-weight="600" fill="#412402">UiTask prio 4</text>
+<text x="515" y="343" text-anchor="middle" font-size="12" fill="#854F0B">红灯 / 蜂鸣器 / 按键</text>
+</g>
+
+<g>
+<rect x="240" y="400" width="350" height="64" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"/>
+<text x="415" y="424" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">7 个任务：Health_Report()</text>
+<text x="415" y="443" text-anchor="middle" font-size="12" fill="#5F5E5A">干完活就报一次进度（周期任务 / 事件任务）</text>
+</g>
+
+<g>
+<rect x="640" y="400" width="150" height="64" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+<text x="715" y="424" text-anchor="middle" font-size="14" font-weight="600" fill="#04342C">HealthTask</text>
+<text x="715" y="443" text-anchor="middle" font-size="12" fill="#0F6E56">prio 1 · 1 s 判据</text>
+</g>
+
+<g>
+<rect x="840" y="400" width="140" height="64" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="1"/>
+<text x="910" y="424" text-anchor="middle" font-size="14" font-weight="600" fill="#501313">IWDG</text>
+<text x="910" y="443" text-anchor="middle" font-size="12" fill="#A32D2D">全部合格才喂 · 2 s</text>
+</g>
+
+<path d="M190 96 H232" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M390 96 H432" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M590 96 H632" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M790 96 H832" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M190 232 H232" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M590 232 H632" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M715 200 V140" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M515 264 V292" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M515 364 V392" fill="none" stroke="#888780" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<path d="M590 432 H632" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M790 432 H832" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<text x="40" y="300" font-size="12" fill="#5F5E5A">TX：HAL_UART_Transmit_IT + 完成信号量</text>
+<text x="40" y="318" font-size="12" fill="#5F5E5A">Uart_Printf 带互斥，长输出分块</text>
+<text x="640" y="300" font-size="12" fill="#5F5E5A">先清 evtQueue，再收 logQueue</text>
+<text x="640" y="318" font-size="12" fill="#5F5E5A">报警事件插队落盘</text>
+</svg>
