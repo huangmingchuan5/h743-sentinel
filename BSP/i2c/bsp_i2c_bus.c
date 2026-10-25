@@ -52,7 +52,7 @@ uint8_t I2cBus_Take(uint32_t timeout_ms)
 void I2cBus_Give(void)
 {
 #if (I2C_LOCK_TEST_SKIP == 0)
-  if ((s_i2cMutex != NULL) && (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED))
+  if ((s_i2cMutex != NULL) && (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED))		//创建过互斥信号量且调度器已经开始运行
   {
     (void)xSemaphoreGive(s_i2cMutex);
   }

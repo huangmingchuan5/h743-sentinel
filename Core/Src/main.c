@@ -130,21 +130,9 @@ int main(void)
 	  printf(" type 'help' for the command list\r\n");
 	  printf("========================================\r\n");
 
-  /* 打印上次复位原因（读后清除，便于下次判断）：
-     POR=上电  BOR=掉电/欠压  PIN=复位引脚  SFT=软件复位  IWDG/WWDG=看门狗  LPWR=低功耗复位 */
-  {
-    Health_SetResetFlags(RCC->RSR);    /* 保存原始标志，供 status 命令解码 */
-    printf("rst    :");
-    if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST)   != 0u) { printf(" POR"); }
-    if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST)   != 0u) { printf(" BOR"); }
-    if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST)   != 0u) { printf(" PIN"); }
-    if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST)   != 0u) { printf(" SFT"); }
-    if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDG1RST) != 0u) { printf(" IWDG"); }
-    if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDG1RST) != 0u) { printf(" WWDG"); }
-    if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWR1RST) != 0u) { printf(" LPWR"); }
-    printf("\r\n");
-    __HAL_RCC_CLEAR_RESET_FLAGS();
-  }
+  /* 复位原因来源：读一次 RSR 保存下来（读后清除），供 status 命令解码。
+     这里只保存、不打印（打印改由 status 输出，避免调度器启动前的阻塞输出）。 */
+  Health_SetResetFlags(RCC->RSR);
 
   /* 创建串口 RTOS 对象（uartMutex / txDoneSem）：必须在调度器启动前 */
   Uart_RtosInit();
@@ -190,7 +178,7 @@ int main(void)
   {
     uint32_t flash_id = 0u;
 
-    if (Flash_Init(&flash_id) == FLASH_OK)
+    if (Flash_Init(&flash_id) == FLASH_OK)			//flash_id存入ID
     {
       printf("flash  : ID = %06X, 4-byte address mode\r\n", (unsigned)flash_id);
 
@@ -211,6 +199,7 @@ int main(void)
   }
 
   /* Step 5.2：初始化 I2C 传感器（失败只影响对应读数，不阻塞启动） */
+  //{}把这段初始化代码里的局部变量"关"在这个块里，避免污染外层函数作用域
   {
     uint8_t ap_st = Ap3216c_Init();
     uint8_t mp_st = Mpu6050_Init();
@@ -229,7 +218,7 @@ int main(void)
     {
       printf("rtc    : FAIL (timestamps will use boot tick)\r\n");
     }
-    else if (Rtc_IsSet() != 0u)
+    else if (Rtc_IsSet() != 0u)	//RTC 正常且时间已设置
     {
       uint32_t ep = 0u;
       char     ts[24];
@@ -239,7 +228,7 @@ int main(void)
       printf("rtc    : %s, calendar %s\r\n",
              (rtc_st == 0u) ? "LSE ok" : "LSI fallback", ts);
     }
-    else
+    else		//RTC 正常但时间未设置
     {
       printf("rtc    : %s, not set (tick timestamps until 'time set')\r\n",
              (rtc_st == 0u) ? "LSE ok" : "LSI fallback");
@@ -247,7 +236,6 @@ int main(void)
   }
   /* USER CODE END 2 */
 
-  /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   /* ---- Step 3：创建3个验证任务，然后启动调度器 ---- */
   if (xTaskCreate(LedTask, "LED", 128u, NULL, 2u, NULL) != pdPASS)
@@ -368,7 +356,8 @@ static void LedTask(void *argument)
 
   for (;;)
   {
-    Led_SetColor(ledOn ? COLOR_WHITE : COLOR_OFF);
+    Led_SetColor(ledOn ? COLOR_GREEN : COLOR_OFF);
+	  //喂狗操作
     Health_Report(HEALTH_LED);
     ledOn ^= 1u;		//取反
 	vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));   /* 绝对延时（自从上一次唤醒时间 开始延时，避免任务执行时间偏差）：500ms 一次，不累计漂移 */
@@ -377,13 +366,15 @@ static void LedTask(void *argument)
 
 /**
   * @brief  Step 3 验证任务②：运行监视。
-  *         每 3 s 打印 FreeRTOS tick / HAL tick 及各自增量、堆水位、任务列表。
+  *         每 30 s 打印 FreeRTOS tick / HAL tick 及各自增量、堆水位、任务列表。
   *         两个 tick 增量应同步 ≈3000（G1 的"增量对比"校验就靠这行输出）。
   *         栈 256 word = 1 KB（printf / vTaskList 的格式化比较吃栈）。
   *         优先级 2：与 LedTask 同级 —— 靠时间片轮转共享 CPU，长打印不会独占。
   */
 static void MonTask(void *argument)
 {
+	//HAL_GetTick固定1ms一跳
+	//xTaskGetTickCount()：频率由 FreeRTOSConfig.h 里的 configTICK_RATE_HZ 决定，常见 1000 Hz（1ms），但完全可以配成 100 Hz（10ms）等。
   TickType_t lastWake = xTaskGetTickCount();
   TickType_t prevTick = lastWake;
   uint32_t   prevHal  = HAL_GetTick();
@@ -396,7 +387,7 @@ static void MonTask(void *argument)
     TickType_t tickNow = xTaskGetTickCount();
     uint32_t   halNow  = HAL_GetTick();
 
-    Uart_Printf("[rtos=%lu (+%lu)] [hal=%lu (+%lu)] free=%u min=%u rxdrop=%u q=%u drop=%u\r\n",
+    Uart_Printf("[rtos = %lu (+%lu)] [hal = %lu (+%lu)] free=%u min=%u rxdrop=%u q=%u drop=%u\r\n",
                 (unsigned long)tickNow, (unsigned long)(tickNow - prevTick),
                 (unsigned long)halNow,  (unsigned long)(halNow - prevHal),
                 (unsigned)xPortGetFreeHeapSize(),

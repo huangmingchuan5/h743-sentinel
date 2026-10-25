@@ -52,6 +52,7 @@ static void Alarm_LogEvent(uint16_t evtFlag)
   (void)Log_EventSend(&ev);
 }
 
+//软件定时器到期后的回调函数（将s_muted 由0变成1）
 static void Alarm_MuteTimerCb(TimerHandle_t timer)
 {
   (void)timer;
@@ -61,7 +62,7 @@ static void Alarm_MuteTimerCb(TimerHandle_t timer)
 void Alarm_Init(void)
 {
   s_muteTimer = xTimerCreate("alm", pdMS_TO_TICKS(ALARM_AUTOMUTE_MS), pdFALSE, NULL,
-                             Alarm_MuteTimerCb);
+	Alarm_MuteTimerCb);										//pdFALSE表示单次触发，pdTRUE表示自动重装载
 }
 
 void Alarm_FeedLight(uint16_t als, uint8_t valid)

@@ -36,6 +36,7 @@ static uint16_t Cfg_Crc16(const uint8_t *data, uint32_t len)
   return crc;
 }
 
+//把配置参数打包成 16 字节
 static void Cfg_Pack(uint8_t *b)
 {
   uint16_t crc;
@@ -43,9 +44,10 @@ static void Cfg_Pack(uint8_t *b)
   b[0]  = 'P';
   b[1]  = '0';
   b[2]  = 'L';
-  b[3]  = '2';                        /* magic（旧版是 'G'，用于格式升级） */
-  b[4]  = CFG_VERSION;
-  b[5]  = Console_GetColor();
+  b[3]  = '2';                       
+	/*魔数： magic（旧版是 'G'，用于格式升级） */
+  b[4]  = CFG_VERSION;				//版本号
+  b[5]  = Console_GetColor();		
   b[6]  = Console_GetBrightness();
   b[7]  = s_rateMs;
   b[8]  = (uint8_t)(s_thrLight & 0xFFu);
@@ -53,6 +55,7 @@ static void Cfg_Pack(uint8_t *b)
   b[10] = (uint8_t)(s_thrMotion & 0xFFu);
   b[11] = (uint8_t)((s_thrMotion >> 8) & 0xFFu);
 
+	//标准的 CRC-16/CCITT-FALSE 算法(CRC校验)
   crc = Cfg_Crc16(b, 12u);
   b[12] = (uint8_t)(crc & 0xFFu);
   b[13] = (uint8_t)((crc >> 8) & 0xFFu);
@@ -61,6 +64,7 @@ static void Cfg_Pack(uint8_t *b)
 }
 
 /* 1 = 内容有效并已生效；0 = 无效 */
+//解包读取配置
 static uint8_t Cfg_Apply(const uint8_t *b)
 {
   uint16_t crc;
@@ -80,7 +84,7 @@ static uint8_t Cfg_Apply(const uint8_t *b)
   }
 
   crc = (uint16_t)(((uint16_t)b[13] << 8) | (uint16_t)b[12]);
-  if (crc != Cfg_Crc16(b, 12u))
+  if (crc != Cfg_Crc16(b, 12u))		//CRC校验
   {
     return 0u;
   }

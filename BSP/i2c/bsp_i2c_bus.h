@@ -23,7 +23,7 @@
 /* 故障注入开关（默认 0）：改成 1 后 Take/Give 变成空操作，用于做
    "加锁 vs 不加锁"对照实验——并发访问 EEPROM 与传感器时会出现偶发 NACK，
    live/dump 里的 ERR 标志会给出来。验证完务必改回 0。 */
-#ifndef I2C_LOCK_TEST_SKIP
+   #ifndef I2C_LOCK_TEST_SKIP					//不为0进行压力测试，看看不加锁会不会冲突
 #define I2C_LOCK_TEST_SKIP        0
 #endif
 

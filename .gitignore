@@ -4,6 +4,7 @@ Listings/
 MDK-ARM/demo2_1/
 MDK-ARM/*.lst
 MDK-ARM/*.uvoptx
+MDK-ARM/*.log
 *.build_log.htm
 *.dep
 *.bak

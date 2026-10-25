@@ -17,14 +17,14 @@
 
 typedef enum
 {
-  HEALTH_ENV = 0,
-  HEALTH_MOT,
-  HEALTH_UI,
-  HEALTH_CON,
-  HEALTH_LOG,
-  HEALTH_LED,
-  HEALTH_MON,
-  HEALTH_COUNT
+	HEALTH_ENV = 0,   // 显式指定为 0
+	HEALTH_MOT,       // 0 + 1 = 1
+	HEALTH_UI,        // 2
+	HEALTH_CON,       // 3
+	HEALTH_LOG,       // 4
+	HEALTH_LED,       // 5
+	HEALTH_MON,       // 6
+	HEALTH_COUNT      // 7
 } HealthId_t;
 
 /** 调度器启动前调用：初始化登记表 + 启动 IWDG（2s）+ 创建 HealthTask。 */

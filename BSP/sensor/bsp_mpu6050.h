@@ -15,7 +15,7 @@
 
 #include "main.h"
 
-#define MPU6050_ADDR7   0x68u
+#define MPU6050_ADDR7   0x68u		//MPU6050 作为 I2C 从设备的 7 位地址
 
 /** 初始化：上电等待 → 唤醒 → 采样率/滤波/量程配置（开机阶段调用一次）。
   * @retval 0 = 成功；0x21 = 抢总线超时；0x30 = WHO_AM_I 不是 0x68；其它 = I2C 错误码 */

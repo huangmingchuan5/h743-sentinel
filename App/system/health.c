@@ -110,12 +110,13 @@ void Health_Start(void)
   uint32_t i;
   TickType_t now = xTaskGetTickCount();
 
-  for (i = 0u; i < (uint32_t)HEALTH_COUNT; i++)
+	//初始化时把 7 个条目全部填成当前时间，表示"所有任务此刻都默认是健康的"
+  for (i = 0u; i < (uint32_t)HEALTH_COUNT; i++)			//HEALTH_COUNT == 7
   {
     s_last[i] = now;
   }
 
-  /* 先建任务：任务建不起来就不启用看门狗，避免"没人喂狗"的死复位循环 */
+  /* 先建任务：任务建不起来就不启用看门狗，避免"没人喂狗"的死复位循环 (先确保喂狗任务成功创建，再启动看门狗)*/
   if (xTaskCreate(HealthTask, "HLTH", 256u, NULL, 1u, NULL) != pdPASS)
   {
     s_healthy = 0u;

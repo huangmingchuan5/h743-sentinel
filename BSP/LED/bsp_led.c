@@ -20,7 +20,7 @@
 
 #define BREATH_TICKS   200u       /* 200 × 10 ms = 2 秒一个完整呼吸周期 */
 
-static App_Color_t s_color      = COLOR_WHITE;   /* 上电默认：白光（LedTask 启动后会立刻接管颜色） */
+static App_Color_t s_color      = COLOR_GREEN;   /* 上电默认：白光（LedTask 启动后会立刻接管颜色） */
 static uint8_t     s_brightness = 100u;          /* pwm 命令设的亮度（呼吸幅度上限） */
 static uint16_t    s_phase      = 0u;            /* 三角波位置：0 → 100 → 0 */
 static volatile LedMode_t s_mode = LED_MODE_NORMAL;
@@ -89,7 +89,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     switch (s_mode)
     {
       case LED_MODE_ALARM:               /* 红色快闪：100ms 亮 / 100ms 灭 */
-        s_blink = (uint16_t)((s_blink + 1u) % 20u);
+        s_blink = (uint16_t)((s_blink + 1u) % 20u);			//0-9 → 亮（10 次 × 10ms = 100ms），10-19 → 灭（100ms）
         Pwm_SetBrightness(PWM_CH_RED,   (s_blink < 10u) ? 100u : 0u);
         Pwm_SetBrightness(PWM_CH_GREEN, 0u);
         Pwm_SetBrightness(PWM_CH_BLUE,  0u);
@@ -97,9 +97,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
       case LED_MODE_FLASH:               /* 蓝色慢闪：250ms 亮 / 250ms 灭 */
         s_blink = (uint16_t)((s_blink + 1u) % 50u);
-        Pwm_SetBrightness(PWM_CH_RED,   0u);
+        Pwm_SetBrightness(PWM_CH_RED,   0u);			
         Pwm_SetBrightness(PWM_CH_GREEN, 0u);
-        Pwm_SetBrightness(PWM_CH_BLUE,  (s_blink < 25u) ? 100u : 0u);
+        Pwm_SetBrightness(PWM_CH_BLUE,  (s_blink < 25u) ? 100u : 0u);		//0-24 → 亮（25 × 10ms = 250ms），25-49 → 灭（250ms）
         break;
 
       case LED_MODE_NORMAL:
@@ -117,13 +117,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 void Led_SetMode(LedMode_t mode)
 {
-  Led_Lock();
+	Led_Lock();		//进入临界区
   if (s_mode != mode)
   {
     s_mode  = mode;
     s_blink = 0u;
   }
-  Led_Unlock();
+  Led_Unlock();		//退出临界区
 }
 
 void Led_Init(void)
@@ -144,9 +144,9 @@ void Led_AllOff(void)
 
 void Led_SetColor(App_Color_t color)
 {
-  Led_Lock();
+	Led_Lock();				//进入临界区
   s_color = color;            /* 下一个呼吸中断（≤10 ms）就按新颜色输出 */
-  Led_Unlock();
+	Led_Unlock();				//退出临界区
 }
 
 void Led_SetBrightness(uint8_t brightness)

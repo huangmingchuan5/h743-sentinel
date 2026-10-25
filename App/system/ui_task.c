@@ -17,7 +17,7 @@
 #include "health.h"
 
 #define BUZZER_PIN          GPIO_PIN_8      /* PI8：有源蜂鸣器 */
-#define BUZZER_ACTIVE_HIGH  1u              /* 1=高电平响；若上电常响就改成 0 */
+//#define BUZZER_ACTIVE_HIGH  1u              /* 1=高电平响；若上电常响就改成 0 */	//用同一份代码适配两种不同硬件接法的蜂鸣器电路（没用处）
 #define KEY1_PIN            GPIO_PIN_0      /* PA0：静音切换 */
 #define KEY2_PIN            GPIO_PIN_13     /* PC13：清除报警 */
 #define KEY_DEBOUNCE_MS     20u
@@ -33,45 +33,40 @@ static uint32_t     s_alarmLatencyMs    = 0u;
 
 static void Ui_BuzzerSet(uint8_t on)
 {
-#if (BUZZER_ACTIVE_HIGH != 0u)
-  HAL_GPIO_WritePin(GPIOI, BUZZER_PIN, (on != 0u) ? GPIO_PIN_SET : GPIO_PIN_RESET);
-#else
-  HAL_GPIO_WritePin(GPIOI, BUZZER_PIN, (on != 0u) ? GPIO_PIN_RESET : GPIO_PIN_SET);
-#endif
+  HAL_GPIO_WritePin(GPIOI, BUZZER_PIN, (GPIO_PinState)on);			//初始默认低电平
 }
 
 static void Ui_HwInit(void)
 {
-  GPIO_InitTypeDef g = {0};
-
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOI_CLK_ENABLE();
-  __HAL_RCC_SYSCFG_CLK_ENABLE();
-
+	GPIO_InitTypeDef g = {0};
+	
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+	__HAL_RCC_GPIOI_CLK_ENABLE();
+	__HAL_RCC_SYSCFG_CLK_ENABLE();
+	
   /* 蜂鸣器：PI8 推挽输出，默认静音 */
-  g.Pin   = BUZZER_PIN;
-  g.Mode  = GPIO_MODE_OUTPUT_PP;
-  g.Pull  = GPIO_NOPULL;
-  g.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOI, &g);
-  Ui_BuzzerSet(0u);
-
-  /* 按键：上拉输入，按下为低电平 → 下降沿中断 */
-  g.Mode = GPIO_MODE_IT_FALLING;
-  g.Pull = GPIO_PULLUP;
-
-  g.Pin = KEY1_PIN;
-  HAL_GPIO_Init(GPIOA, &g);
-
-  g.Pin = KEY2_PIN;
-  HAL_GPIO_Init(GPIOC, &g);
-
-  /* 调用 FreeRTOS FromISR 接口的中断：优先级必须 ≥5 */
-  HAL_NVIC_SetPriority(EXTI0_IRQn, 5u, 0u);
-  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5u, 0u);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+	g.Pin   = BUZZER_PIN;
+	g.Mode  = GPIO_MODE_OUTPUT_PP;
+	g.Pull  = GPIO_NOPULL;
+	g.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOI, &g);
+	Ui_BuzzerSet(0u);				//设置为默认的低电平，不响
+	
+	/* 按键：上拉输入，按下为低电平 → 下降沿中断 */
+	g.Mode = GPIO_MODE_IT_FALLING;
+	g.Pull = GPIO_PULLUP;
+	g.Pin = KEY1_PIN;
+	HAL_GPIO_Init(GPIOA, &g);
+	
+	g.Pin = KEY2_PIN;
+	HAL_GPIO_Init(GPIOC, &g);
+	
+	/* 调用 FreeRTOS FromISR 接口的中断：优先级必须 ≥5,不然无法被屏蔽 */
+	HAL_NVIC_SetPriority(EXTI0_IRQn, 5u, 0u);
+	HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+	HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5u, 0u);
+	HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
 /* EXTI 回调（中断上下文）：只负责叫醒 UiTask，消抖留给任务 */

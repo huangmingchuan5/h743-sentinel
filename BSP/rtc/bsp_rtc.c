@@ -125,24 +125,26 @@ uint8_t Rtc_Init(void)
   s_hrtc.Init.HourFormat     = RTC_HOURFORMAT_24;
   s_hrtc.Init.AsynchPrediv   = 127u;
   s_hrtc.Init.SynchPrediv    = (lse_ok != 0u) ? 255u : 249u;
+  //是否输出、映射到哪个引脚、极性、输出类型
   s_hrtc.Init.OutPut         = RTC_OUTPUT_DISABLE;
   s_hrtc.Init.OutPutRemap    = RTC_OUTPUT_REMAP_NONE;
-  s_hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
-  s_hrtc.Init.OutPutType     = RTC_OUTPUT_TYPE_OPENDRAIN;
+  s_hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;		//高电平有效
+  s_hrtc.Init.OutPutType     = RTC_OUTPUT_TYPE_OPENDRAIN;		//设置输出引脚是PP还是OD
   if (HAL_RTC_Init(&s_hrtc) != HAL_OK)
   {
     return 2u;
   }
 
   s_ready   = 1u;		//标记RTC初始化完成
-  s_timeSet = (HAL_RTCEx_BKUPRead(&s_hrtc, RTC_BKP_DR0) == RTC_MAGIC) ? 1u : 0u;
+  //从 RTC 备份寄存器 DR0 读出值，若等于约定的魔数 RTC_MAGIC，则把 s_timeSet 置 1（表示时间已设置过、有效），否则置 0（表示首次上电/时间无效）
+  s_timeSet = (HAL_RTCEx_BKUPRead(&s_hrtc, RTC_BKP_DR0) == RTC_MAGIC) ? 1u : 0u;		//备份寄存器（掉电不丢失）
 
   return (lse_ok != 0u) ? 0u : 1u;
 }
 
 uint8_t Rtc_IsSet(void)
 {
-  return s_timeSet;
+	return s_timeSet;		//1-->表示已经timeset; 0-->表示没有timeSet
 }
 
 uint8_t Rtc_GetEpoch(uint32_t *epoch2000)

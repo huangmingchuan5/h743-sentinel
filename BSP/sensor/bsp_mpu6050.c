@@ -16,7 +16,7 @@
 #define MPU_RA_ACCEL_CONFIG   0x1Cu
 #define MPU_RA_ACCEL_XOUT_H   0x3Bu
 #define MPU_RA_PWR_MGMT_1     0x6Bu
-#define MPU_RA_WHO_AM_I       0x75u
+#define MPU_RA_WHO_AM_I       0x75u			//MPU6050 内部寄存器的地址（WHO_AM_I 寄存器）
 
 #define MPU_IO_TIMEOUT_MS     100u
 
@@ -50,20 +50,20 @@ uint8_t Mpu6050_Init(void)
     return I2C_BUS_ERR_BUSY;
   }
 
-  /* 1) 先核对身份：WHO_AM_I 应为 0x68 */
+  /* 把WHOAMI寄存器内的（只是从0x75处开始读）内容读入&id*/
   if (Mpu_ReadRegs(MPU_RA_WHO_AM_I, &id, 1u) != 0u)		//不为0报错
   {
     I2cBus_Give();
-    return 0x01u;	
+    return 0x01u;					//IIC 读取错误
   }
-  s_whoami = id;
-  if (id != MPU6050_ADDR7)
+  s_whoami = id;			//全局静态变量
+  if (id != MPU6050_ADDR7)			//WHO_AM_I 寄存器(0x75)处读出来的的默认值恰好是 0x68
   {
     I2cBus_Give();
-    return 0x30u;
+    return 0x30u;		//ID disMATCH错误
   }
 
-  /* 2) 一次持锁，把整组配置写完 */
+  /* 2) 一次持锁，将配置写入寄存器内部（前面的只是起始地址）*/
   if (Mpu_WriteReg(MPU_RA_PWR_MGMT_1,   0x00u) != 0u) { seq_ok = 0u; }  /* 唤醒 */
   if (Mpu_WriteReg(MPU_RA_SMPLRT_DIV,   0x07u) != 0u) { seq_ok = 0u; }  /* 1kHz/(1+7) = 125Hz */
   if (Mpu_WriteReg(MPU_RA_CONFIG,       0x03u) != 0u) { seq_ok = 0u; }  /* DLPF：加速度 44Hz */

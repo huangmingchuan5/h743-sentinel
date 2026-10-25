@@ -40,7 +40,7 @@ uint8_t Ap3216c_Init(void)
   uint8_t st;
 
   /* 1) 软复位 */
-  if (I2cBus_Take(I2C_BUS_TIMEOUT_MS) == 0u)
+  if (I2cBus_Take(I2C_BUS_TIMEOUT_MS) == 0u)		//获取信号量
   {
     return I2C_BUS_ERR_BUSY;
   }
@@ -55,7 +55,7 @@ uint8_t Ap3216c_Init(void)
   HAL_Delay(100);                     /* 等复位完成（本函数在开机阶段调用，HAL_Delay 可用） */
 
   /* 2) 打开 ALS + PS 功能 */
-  if (I2cBus_Take(I2C_BUS_TIMEOUT_MS) == 0u)
+  if (I2cBus_Take(I2C_BUS_TIMEOUT_MS) == 0u)		//获取到锁
   {
     return I2C_BUS_ERR_BUSY;
   }
