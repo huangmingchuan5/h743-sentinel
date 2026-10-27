@@ -959,9 +959,9 @@ static void Cmd_Status(const char *arg)
   Uart_Printf("status : alarm light=%u motion=%u muted=%u\r\n",
               (unsigned)Alarm_LightActive(), (unsigned)Alarm_MotionActive(),
               (unsigned)Alarm_IsMuted());
-  Uart_Printf("status : log count=%lu avail=%lu err=%u q=%u qpeak=%u drop=%u rxdrop=%u\r\n",
+  Uart_Printf("status : log count=%lu avail=%lu err=%u ready=%u q=%u qpeak=%u drop=%u rxdrop=%u\r\n",
               (unsigned long)Log_GetCount(), (unsigned long)Log_GetAvailable(),
-              (unsigned)Log_GetWriteErrors(),
+              (unsigned)Log_GetWriteErrors(), (unsigned)Log_IsReady(),
               (unsigned)Sample_QueueCount(), (unsigned)Sample_QueuePeak(),
               (unsigned)Sample_DropCount(),
               (unsigned)Uart_RxDropped());

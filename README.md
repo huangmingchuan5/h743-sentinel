@@ -64,7 +64,7 @@ I2C4 (共享总线, i2cMutex)
 | `MOT` | 5 | 160 | 50 ms（可配 20–200） | 读加速度，合成 20 Hz 快照入队，喂运动判定 |
 | `UI` | 4 | 384 | 50 ms / 事件 | 灯效（呼吸 / 红快闪 / 蓝闪）、蜂鸣器 200/300 ms、按键消抖 |
 | `CON` | 3 | 512 | 事件驱动 | 命令行解析、回显、行编辑（任务通知唤醒，1 s 心跳） |
-| `LOG` | 2 | 320 | 事件驱动 | 先清 evtQueue 再收 logQueue，攒 32 条或 2 s 写盘，提交检查点 |
+| `LOG` | 2 | 512 | 事件驱动 | 先清 evtQueue 再收 logQueue，攒 32 条或 2 s 写盘，失败后退避 200 ms |
 | `LED` | 2 | 128 | 500 ms | 心跳灯（`vTaskDelayUntil`） |
 | `MON` | 2 | 256 | 3 s | 打印 tick/HAL tick 增量、heap、`vTaskList` |
 | `HLTH` | 1 | 256 | 1 s | 汇总 7 个任务的进度判据，全部合格才刷新 IWDG（2 s） |
@@ -124,8 +124,8 @@ I2C4 (共享总线, i2cMutex)
 
 | 项 | 大小 |
 |---|---|
-| Code + RO-data | 55,372 + 2,176 = **57,548 B（≈56.2 KB）** |
-| RW-data + ZI-data | 312 + 53,632 = **53,944 B（≈52.7 KB）**，其中 48 KB 是 FreeRTOS heap |
+| Code + RO-data | 55,748 + 2,188 = **57,936 B（≈56.6 KB）** |
+| RW-data + ZI-data | 316 + 53,892 = **54,208 B（≈52.9 KB）**，其中 48 KB 是 FreeRTOS heap |
 | 编译结果 | **0 Error(s), 0 Warning(s)**（AC5 V5.06u7，全量编译 + 链接复核） |
 
 ---
@@ -191,6 +191,7 @@ LICENSES/   第三方许可证全文
 | BASEPRI 泄漏 | TIM6/TIM7 中断被长期屏蔽，`uxCriticalNesting` 哨兵值掩盖了问题 | 调度器启动前的 I2C 操作跳过互斥量；RTOS 对象创建后显式清 BASEPRI |
 | 三器件共享 I2C | 传感器读取与 EEPROM 保存并发时偶发 NACK | 统一 I2C4 句柄 + `i2cMutex`（带 100 ms 超时），所有访问走锁封装 |
 | QSPI 4 字节地址模式 | 32 MB 容量下线性读超过 16 MB 边界失效 | 初始化时进入 4-byte address mode |
+| QSPI 高频擦写不稳 | ID 能读，但页写/擦除偶发超时，日志写不进去、板子被看门狗反复复位 | 时钟 120 MHz → **60 MHz**（`ClockPrescaler=3`）；写失败退避 200 ms，避免饿死 HealthTask |
 | 阻塞式 `printf` 拖慢任务 | 长输出时其他任务被饿死 | TX 改中断 + 完成信号量；`dump` 分块输出，锁不跨输出 |
 | 传感器失败误报警 | 读取失败时变量保持 0，被判定成"变暗/晃动" | `Alarm_Feed*` 增加 `valid` 参数：坏样本不参与判定、基线作废 |
 

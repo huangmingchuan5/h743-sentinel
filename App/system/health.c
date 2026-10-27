@@ -22,7 +22,8 @@
 #define HEALTH_GAP_CON    2500u
 #define HEALTH_GAP_LOG    6000u
 #define HEALTH_GAP_LED    2500u
-#define HEALTH_GAP_MON    5000u
+#define HEALTH_GAP_MON    5000u    /* MonTask 默认 3 s 打印一次，留 2 s 余量；
+                                      若改大 MonTask 周期，必须同步改大这里 */
 
 #if (HEALTH_IWDG_ENABLE != 0)
 static IWDG_HandleTypeDef s_hiwdg;
@@ -35,6 +36,7 @@ static uint32_t            s_resetFlags = 0u;
 static uint8_t  s_wdStopActive = 0u;
 static TickType_t s_wdStopUntil = 0u;
 static uint8_t  s_wdgOk      = 0u;   /* IWDG 初始化成功才允许刷新 */
+static uint8_t  s_disabledMask = 0u; /* bit n = 1：该任务不参与判据（未启动） */
 
 static uint16_t Health_GapOf(HealthId_t id)
 {
@@ -59,6 +61,14 @@ void Health_Report(HealthId_t id)
   }
 }
 
+void Health_Disable(HealthId_t id)
+{
+  if ((uint32_t)id < (uint32_t)HEALTH_COUNT)
+  {
+    s_disabledMask |= (uint8_t)(1u << (uint32_t)id);
+  }
+}
+
 static void HealthTask(void *argument)
 {
   (void)argument;
@@ -72,6 +82,11 @@ static void HealthTask(void *argument)
 
     for (i = 0u; i < (uint32_t)HEALTH_COUNT; i++)
     {
+      if ((s_disabledMask & (uint8_t)(1u << i)) != 0u)
+      {
+        continue;                      /* 该任务本次没有启动，不参与判据 */
+      }
+
       if ((TickType_t)(now - s_last[i]) > pdMS_TO_TICKS(Health_GapOf((HealthId_t)i)))
       {
         ok = 0u;

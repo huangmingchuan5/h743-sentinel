@@ -56,8 +56,12 @@
 /** 上电调用（读元数据 + 恢复写指针 + 扫描未提交记录）。0 = 成功。 */
 uint8_t Log_Init(void);
 
-/** 调度器启动前调用：创建 flashMutex + LoggerTask（优先级 2）。 */
+/** 调度器启动前调用：创建 flashMutex + LoggerTask（优先级 2）。
+    若 Log_Init 失败则什么也不做。 */
 void Log_Start(void);
+
+/** 1 = 日志层初始化成功、写盘任务已创建。 */
+uint8_t Log_IsReady(void);
 
 /** 采样任务入队后调用：通知 LoggerTask 来收数据。 */
 void Log_Notify(void);

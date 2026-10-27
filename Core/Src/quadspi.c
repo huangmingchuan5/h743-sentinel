@@ -38,7 +38,10 @@ void MX_QUADSPI_Init(void)
 
   /* USER CODE END QUADSPI_Init 1 */
   hqspi.Instance = QUADSPI;
-  hqspi.Init.ClockPrescaler = 1;
+  /* QSPI 时钟 = D1HCLK(240MHz) / (Prescaler+1)。
+     Prescaler=1 → 120MHz，接近 W25Q256 上限，长走线/杜邦线上擦写容易出错；
+     这里降到 3 → 60MHz，日志带宽需求只有几 KB/s，稳定性优先。 */
+  hqspi.Init.ClockPrescaler = 3;
   hqspi.Init.FifoThreshold = 24;
   hqspi.Init.SampleShifting = QSPI_SAMPLE_SHIFTING_HALFCYCLE;
   hqspi.Init.FlashSize = 24;

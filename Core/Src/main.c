@@ -55,6 +55,10 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+/* 日志总开关：0 = 不创建 LoggerTask（用于隔离 Flash/日志问题）。
+   关闭时会自动把 HEALTH_LOG 从健康判据移除，避免看门狗误复位。 */
+#define LOG_ENABLE   1
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -259,7 +263,15 @@ int main(void)
   Sample_Start();
 
   /* Step 6：日志写盘任务（消费 logQueue） */
+#if (LOG_ENABLE != 0)
   Log_Start();
+  if (Log_IsReady() == 0u)
+  {
+    Health_Disable(HEALTH_LOG);      /* 初始化失败：没人报活，别让看门狗误复位 */
+  }
+#else
+  Health_Disable(HEALTH_LOG);        /* 没启动日志任务，就别让它参与健康判据 */
+#endif
 
   /* Step 7：报警判定与 UI（LED 模式、蜂鸣器 PI8、按键 PA0/PC13） */
   Alarm_Init();
@@ -384,8 +396,9 @@ static void MonTask(void *argument)
 
   for (;;)
   {
-    TickType_t tickNow = xTaskGetTickCount();
-    uint32_t   halNow  = HAL_GetTick();
+    TickType_t tickNow = xTaskGetTickCount();			
+    uint32_t   halNow  = HAL_GetTick();					//固定1ms一跳
+	  
 
     Uart_Printf("[rtos = %lu (+%lu)] [hal = %lu (+%lu)] free=%u min=%u rxdrop=%u q=%u drop=%u\r\n",
                 (unsigned long)tickNow, (unsigned long)(tickNow - prevTick),
@@ -393,33 +406,39 @@ static void MonTask(void *argument)
                 (unsigned)xPortGetFreeHeapSize(),
                 (unsigned)xPortGetMinimumEverFreeHeapSize(),
                 (unsigned)Uart_RxDropped(),
-                (unsigned)Sample_QueueCount(),
+                (unsigned)Sample_QueueCount(),			//队列现在有多少消息
                 (unsigned)Sample_DropCount());
 
     prevTick = tickNow;
     prevHal  = halNow;
 
+	//vTaskList作用是输出每个任务的详细信息，制作成表格形式
     vTaskList(listBuf);                      /* 需要 TRACE_FACILITY=1 + STATS_FORMATTING=1 */
     Uart_Write(listBuf, (uint16_t)strlen(listBuf));
     Uart_Printf("\r\n");
 
-    Health_Report(HEALTH_MON);
-    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(3000));  /* 3 s 一次 */
+    Health_Report(HEALTH_MON);				//6
+    /* 注意：本周期必须小于 App/system/health.c 里的 HEALTH_GAP_MON（默认 5 s），
+       否则 HealthTask 会认为 MON 已卡死而停止喂狗。 */
+    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(3000));
   }
 }
 
 /* USER CODE END 4 */
 
- /* MPU Configuration */
-
+ /* 
+	*MPU Configuration
+	*设定默认配置
+*/
 void MPU_Config(void)
 {
   MPU_Region_InitTypeDef MPU_InitStruct = {0};
 
-  /* Disables the MPU */
+  /* 失能MPU */
   HAL_MPU_Disable();
 
-  /** Initializes and configures the Region and the memory to be protected
+  /*
+  * Initializes and configures the Region and the memory to be protected
   */
   MPU_InitStruct.Enable = MPU_REGION_ENABLE;
   MPU_InitStruct.Number = MPU_REGION_NUMBER0;
@@ -434,7 +453,7 @@ void MPU_Config(void)
   MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
 
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
-  /* Enables the MPU */
+  /* 使能 MPU */
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 
 }

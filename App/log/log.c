@@ -45,6 +45,7 @@ static uint32_t          s_metaSector  = LOG_META_A_ADDR;  /* 当前检查点扇
 static uint32_t          s_metaOffset  = 0u;   /* 扇区内下一个空槽偏移 */
 static uint16_t          s_writeErrors = 0u;
 static volatile uint8_t  s_paused      = 0u;
+static uint8_t           s_logReady    = 0u;   /* Log_Init 成功后才允许任务写盘 */
 
 /* -------------------------------------------------------------------------- */
 /* 基础工具                                                                    */
@@ -236,7 +237,7 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t n)
     {
       uint16_t cnt = (uint16_t)(room / LOG_RECORD_SIZE);
       uint16_t k;
-      uint8_t  tmp[FLASH_PAGE_SIZE];
+      static uint8_t tmp[FLASH_PAGE_SIZE];   /* 放 BSS，避免占 LoggerTask 栈 */
 
       for (k = 0u; k < cnt; k++)
       {
@@ -281,10 +282,11 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t n)
 static void LoggerTask(void *argument)
 {
   static Sample_t batch[LOG_BATCH_MAX];   /* 1KB，放 BSS 不占任务栈 */
-  uint16_t        n           = 0u;
-  uint32_t        recsSinceMeta = 0u;
-  TickType_t      lastFlush   = xTaskGetTickCount();
-  TickType_t      lastMeta    = xTaskGetTickCount();
+    uint16_t        n           = 0u;
+    uint32_t        recsSinceMeta = 0u;
+    TickType_t      lastFlush   = xTaskGetTickCount();
+    TickType_t      lastMeta    = xTaskGetTickCount();
+    uint8_t         wr          = LOG_OK;
 
   (void)argument;
 
@@ -326,6 +328,7 @@ static void LoggerTask(void *argument)
         ((n > 0u) &&
          ((TickType_t)(now - lastFlush) >= pdMS_TO_TICKS(LOG_FLUSH_TIMEOUT_MS))))
     {
+      wr = LOG_ERR;                    /* 默认按失败处理；写成功再改回 */
       if (Log_Lock() != 0u)
       {
         if (sysEvents != NULL)
@@ -333,7 +336,8 @@ static void LoggerTask(void *argument)
           (void)xEventGroupSetBits(sysEvents, EVT_FLASH_BUSY);
         }
 
-        if (Log_WriteBatchLocked(batch, n) == LOG_OK)
+        wr = Log_WriteBatchLocked(batch, n);
+        if (wr == LOG_OK)
         {
           recsSinceMeta += n;
         }
@@ -366,6 +370,14 @@ static void LoggerTask(void *argument)
 
       n = 0u;
       lastFlush = xTaskGetTickCount();
+
+      /* 写失败/抢锁超时：主动让出 CPU。LoggerTask 优先级 2，
+         HealthTask 只有 1；如果不让出，Flash 故障会让健康任务永远跑不到，
+         表现为 IWDG 反复复位（而不是报错）。 */
+      if (wr != LOG_OK)
+      {
+        vTaskDelay(pdMS_TO_TICKS(200));
+      }
     }
     else if (n == 0u)
     {
@@ -391,6 +403,8 @@ uint8_t Log_Init(void)
   LogMeta_t *best = NULL;
   uint32_t   bestSector = 0u;
   uint32_t   bestSlot = 0u;
+
+  s_logReady = 0u;                     /* 初始化成功前禁止写盘 */
 
   if ((va != 0u) && (vb != 0u))
   {
@@ -424,9 +438,13 @@ uint8_t Log_Init(void)
 
   if (best == NULL)
   {
-    /* 没有任何有效检查点：当成新盘初始化 */
-    (void)Flash_EraseSector(LOG_META_A_ADDR);
-    (void)Flash_EraseSector(LOG_META_B_ADDR);
+    /* 没有任何有效检查点：当成新盘初始化。
+       擦除失败必须报错——否则接着写元数据会"读回像是对的"，把坏擦除掩盖过去。 */
+    if ((Flash_EraseSector(LOG_META_A_ADDR) != FLASH_OK) ||
+        (Flash_EraseSector(LOG_META_B_ADDR) != FLASH_OK))
+    {
+      return LOG_ERR;
+    }
 
     s_epoch      = 1u;
     s_wrAddr     = LOG_DATA_BASE;
@@ -435,7 +453,12 @@ uint8_t Log_Init(void)
     s_metaSector = LOG_META_A_ADDR;
     s_metaOffset = 0u;
 
-    return (Log_CommitMetaLocked() == LOG_OK) ? LOG_OK : LOG_ERR;
+    if (Log_CommitMetaLocked() != LOG_OK)
+    {
+      return LOG_ERR;
+    }
+    s_logReady = 1u;
+    return LOG_OK;
   }
 
   s_epoch      = best->epoch;
@@ -492,15 +515,26 @@ uint8_t Log_Init(void)
     }
   }
 
+  s_logReady = 1u;
   return LOG_OK;
 }
 
 void Log_Start(void)
 {
+  if (s_logReady == 0u)
+  {
+    return;                            /* Log_Init 失败：不要创建写盘任务 */
+  }
+
   s_flashMutex = xSemaphoreCreateMutex();
   s_evtQueue   = xQueueCreate(16u, sizeof(Sample_t));
 
-  (void)xTaskCreate(LoggerTask, "LOG", 320u, NULL, 2u, &s_loggerTask);
+  (void)xTaskCreate(LoggerTask, "LOG", 512u, NULL, 2u, &s_loggerTask);
+}
+
+uint8_t Log_IsReady(void)
+{
+  return (s_logReady != 0u) ? 1u : 0u;
 }
 
 void Log_Notify(void)
@@ -513,7 +547,7 @@ void Log_Notify(void)
 
 uint8_t Log_EventSend(const Sample_t *evt)
 {
-  if ((s_evtQueue == NULL) || (evt == NULL))
+  if ((s_logReady == 0u) || (s_evtQueue == NULL) || (evt == NULL))
   {
     return 1u;
   }

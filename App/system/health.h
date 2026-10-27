@@ -33,6 +33,10 @@ void Health_Start(void);
 /** 任务上报"我还活着"（周期任务每圈、事件任务每次处理完业务）。 */
 void Health_Report(HealthId_t id);
 
+/** 把某个任务从健康判据里移除（用于调试时故意不启动的任务，
+    例如 LOG_ENABLE=0 不启动 LoggerTask）。必须在 Health_Start() 之前调用。 */
+void Health_Disable(HealthId_t id);
+
 /** 1 = 所有任务健康；0 = 有任务超时未上报。 */
 uint8_t Health_GetHealthy(void);
 
