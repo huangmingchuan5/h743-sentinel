@@ -132,7 +132,12 @@ void Health_Start(void)
   }
 
   /* 先建任务：任务建不起来就不启用看门狗，避免"没人喂狗"的死复位循环 (先确保喂狗任务成功创建，再启动看门狗)*/
-  if (xTaskCreate(HealthTask, "HLTH", 256u, NULL, 1u, NULL) != pdPASS)
+  /* 优先级 7：高于所有业务任务（最高 ENV=6）。
+     健康监控必须能在"某个任务长时间占用 CPU"时仍然运行——它靠时间戳判断
+     任务是否卡死，本身只做几次比较，开销极小。若把它放在最低优先级 1，
+     一旦有任务（例如写 Flash 失败后重试的 LoggerTask）持续就绪，
+     HealthTask 就会被饿死、无法喂狗，表现为 IWDG 反复复位而不是报错。 */
+  if (xTaskCreate(HealthTask, "HLTH", 256u, NULL, 7u, NULL) != pdPASS)
   {
     s_healthy = 0u;
     s_wdgOk   = 0u;

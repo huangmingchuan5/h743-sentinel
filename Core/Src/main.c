@@ -134,9 +134,11 @@ int main(void)
 	  printf(" type 'help' for the command list\r\n");
 	  printf("========================================\r\n");
 
-  /* 复位原因来源：读一次 RSR 保存下来（读后清除），供 status 命令解码。
-     这里只保存、不打印（打印改由 status 输出，避免调度器启动前的阻塞输出）。 */
+  /* 复位原因来源：读一次 RSR 保存下来，然后立刻清除。
+     注意：RSR 的各个 RSTF 是"粘住"的，不清除的话下次 status 会把历史上
+     所有复位原因一起显示（POR+BOR+PIN+SFT+IWDG 全亮），无法判断本次原因。 */
   Health_SetResetFlags(RCC->RSR);
+  __HAL_RCC_CLEAR_RESET_FLAGS();
 
   /* 创建串口 RTOS 对象（uartMutex / txDoneSem）：必须在调度器启动前 */
   Uart_RtosInit();

@@ -53,7 +53,7 @@ I2C4 (共享总线, i2cMutex)
                                                              QSPI W25Q256
                                                        扇区0/1 元数据 A/B · 扇区2+ 数据环
 
-每个任务 → Health_Report() ─► HealthTask (prio 1, 1 s) ─► 全部合格才 HAL_IWDG_Refresh()
+每个任务 → Health_Report() ─► HealthTask (prio 7, 1 s) ─► 全部合格才 HAL_IWDG_Refresh()
 ```
 
 ### 任务表（当前实现）
@@ -67,7 +67,7 @@ I2C4 (共享总线, i2cMutex)
 | `LOG` | 2 | 512 | 事件驱动 | 先清 evtQueue 再收 logQueue，攒 32 条或 2 s 写盘，失败后退避 200 ms |
 | `LED` | 2 | 128 | 500 ms | 心跳灯（`vTaskDelayUntil`） |
 | `MON` | 2 | 256 | 3 s | 打印 tick/HAL tick 增量、heap、`vTaskList` |
-| `HLTH` | 1 | 256 | 1 s | 汇总 7 个任务的进度判据，全部合格才刷新 IWDG（2 s） |
+| `HLTH` | 7 | 256 | 1 s | 汇总 7 个任务的进度判据，全部合格才刷新 IWDG（2 s） |
 | `Tmr Svc` | 2 | 512 | — | 软件定时器服务：报警 30 s 自动静音 |
 
 > 栈水位可直接看 `MON` 任务每 3 s 打印的 `vTaskList`（Stack 列即高水位，单位 word）；
@@ -124,7 +124,7 @@ I2C4 (共享总线, i2cMutex)
 
 | 项 | 大小 |
 |---|---|
-| Code + RO-data | 55,748 + 2,188 = **57,936 B（≈56.6 KB）** |
+| Code + RO-data | 56,164 + 2,188 = **58,352 B（≈57.0 KB）** |
 | RW-data + ZI-data | 316 + 53,892 = **54,208 B（≈52.9 KB）**，其中 48 KB 是 FreeRTOS heap |
 | 编译结果 | **0 Error(s), 0 Warning(s)**（AC5 V5.06u7，全量编译 + 链接复核） |
 

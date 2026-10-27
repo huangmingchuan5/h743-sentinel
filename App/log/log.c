@@ -14,6 +14,19 @@
 #include "health.h"
 #include <string.h>
 
+/* 写盘过程跟踪：1 = 串口打印每一步（定位 QSPI/日志问题用），量产改 0。
+   打印本身会占用 UART 互斥量，但只在每批（≥2s）打十来行，调试够用。 */
+#ifndef LOG_TRACE
+#define LOG_TRACE   1
+#endif
+
+#if (LOG_TRACE != 0)
+#include "bsp_uart.h"
+#define LOG_TR(...)   Uart_Printf(__VA_ARGS__)
+#else
+#define LOG_TR(...)   do { } while (0)
+#endif
+
 #define LOG_META_MAGIC    0x534E5431u   /* "SNT1" */
 #define LOG_META_VERSION  1u
 
@@ -216,11 +229,14 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t n)
     /* 进入新扇区：先擦除回收（该扇区是最旧的数据） */
     if ((addr % FLASH_ERASE_SIZE) == 0u)
     {
+      LOG_TR("[log] erase 0x%08lX ...\r\n", (unsigned long)addr);
       if (Flash_EraseSector(addr) != FLASH_OK)
       {
         s_writeErrors++;
+        LOG_TR("[log] erase FAIL\r\n");
         return LOG_ERR;
       }
+      LOG_TR("[log] erase ok\r\n");
     }
 
     /* 一次页写不跨页；32B 记录天然对齐，不会切到半条 */
@@ -246,17 +262,22 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t n)
                                 (uint32_t)(LOG_RECORD_SIZE - 2u));
       }
 
+      LOG_TR("[log] page 0x%08lX len=%u ...\r\n",
+             (unsigned long)addr, (unsigned)room);
       if (Flash_PageWrite(addr, (uint8_t *)&recs[i], room) != FLASH_OK)
       {
         s_writeErrors++;
+        LOG_TR("[log] page write FAIL\r\n");
         return LOG_ERR;
       }
       if ((Flash_Read(addr, tmp, room) != FLASH_OK) ||
           (memcmp(tmp, (const uint8_t *)&recs[i], room) != 0))
       {
         s_writeErrors++;
+        LOG_TR("[log] page readback MISMATCH\r\n");
         return LOG_ERR;
       }
+      LOG_TR("[log] page ok\r\n");
 
       s_recTotal += cnt;
       s_wrAddr = addr + room;
@@ -290,11 +311,17 @@ static void LoggerTask(void *argument)
 
   (void)argument;
 
+  LOG_TR("[log] task start, stack free=%u\r\n",
+         (unsigned)uxTaskGetStackHighWaterMark(NULL));
+
   for (;;)
   {
     TickType_t now     = xTaskGetTickCount();
     TickType_t elapsed = (TickType_t)(now - lastFlush);
     TickType_t remain;
+
+    /* 先报活：一次批量写盘可能超过 1s，等写完再报会让 HealthTask 误判 LOG 卡死 */
+    Health_Report(HEALTH_LOG);
 
     if (elapsed >= pdMS_TO_TICKS(LOG_FLUSH_TIMEOUT_MS))
     {
@@ -328,6 +355,9 @@ static void LoggerTask(void *argument)
         ((n > 0u) &&
          ((TickType_t)(now - lastFlush) >= pdMS_TO_TICKS(LOG_FLUSH_TIMEOUT_MS))))
     {
+      LOG_TR("[log] batch n=%u addr=0x%08lX\r\n",
+             (unsigned)n, (unsigned long)s_wrAddr);
+
       wr = LOG_ERR;                    /* 默认按失败处理；写成功再改回 */
       if (Log_Lock() != 0u)
       {
@@ -370,6 +400,10 @@ static void LoggerTask(void *argument)
 
       n = 0u;
       lastFlush = xTaskGetTickCount();
+
+      LOG_TR("[log] batch %s err=%u next=0x%08lX\r\n",
+             (wr == LOG_OK) ? "ok" : "FAIL",
+             (unsigned)s_writeErrors, (unsigned long)s_wrAddr);
 
       /* 写失败/抢锁超时：主动让出 CPU。LoggerTask 优先级 2，
          HealthTask 只有 1；如果不让出，Flash 故障会让健康任务永远跑不到，
