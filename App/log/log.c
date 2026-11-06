@@ -215,13 +215,16 @@ static uint8_t Log_CommitMetaLocked(void)
 }
 
 /* 批量写数据（调用者持锁）：按页切片、跨扇区先擦除、写后读回校验。
-   记录在写入时统一分配 seq + 计算 CRC。 */
-static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t n)
+   全局 seq / 记录计数 / 写指针只在"页写 + 读回成功"之后提交；任何一步失败时，
+   把尚未落盘的尾部记录搬回 batch 头部，供下次重试重新分配 seq 与 CRC。
+   *pn 输入为待写条数，输出为仍待写（未落盘）的条数。 */
+static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t *pn)
 {
   const uint32_t dataEnd = LOG_DATA_BASE + LOG_DATA_SIZE;
   uint16_t i = 0u;
+  uint32_t seq = s_seqNext;          /* 局部 seq，失败时不污染全局 */
 
-  while (i < n)
+  while (i < *pn)
   {
     uint32_t addr = s_wrAddr;
     uint32_t room;
@@ -234,16 +237,16 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t n)
       {
         s_writeErrors++;
         LOG_TR("[log] erase FAIL\r\n");
-        return LOG_ERR;
+        goto fail;
       }
       LOG_TR("[log] erase ok\r\n");
     }
 
     /* 一次页写不跨页；32B 记录天然对齐，不会切到半条 */
     room = FLASH_PAGE_SIZE - (addr % FLASH_PAGE_SIZE);
-    if (room > ((uint32_t)(n - i) * LOG_RECORD_SIZE))
+    if (room > ((uint32_t)(*pn - i) * LOG_RECORD_SIZE))
     {
-      room = (uint32_t)(n - i) * LOG_RECORD_SIZE;
+      room = (uint32_t)(*pn - i) * LOG_RECORD_SIZE;
     }
     if ((addr + room) > dataEnd)
     {
@@ -257,7 +260,7 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t n)
 
       for (k = 0u; k < cnt; k++)
       {
-        recs[i + k].seq = s_seqNext++;
+        recs[i + k].seq = seq++;
         recs[i + k].crc = Crc16((const uint8_t *)&recs[i + k],
                                 (uint32_t)(LOG_RECORD_SIZE - 2u));
       }
@@ -268,19 +271,21 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t n)
       {
         s_writeErrors++;
         LOG_TR("[log] page write FAIL\r\n");
-        return LOG_ERR;
+        goto fail;
       }
       if ((Flash_Read(addr, tmp, room) != FLASH_OK) ||
           (memcmp(tmp, (const uint8_t *)&recs[i], room) != 0))
       {
         s_writeErrors++;
         LOG_TR("[log] page readback MISMATCH\r\n");
-        return LOG_ERR;
+        goto fail;
       }
       LOG_TR("[log] page ok\r\n");
 
+      /* 只有页写 + 读回都成功，才把全局状态推进到这一页 */
+      s_seqNext   = seq;
       s_recTotal += cnt;
-      s_wrAddr = addr + room;
+      s_wrAddr    = addr + room;
       i = (uint16_t)(i + cnt);
     }
 
@@ -290,11 +295,23 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t n)
       s_wrAddr = LOG_DATA_BASE;
       if (Log_CommitMetaLocked() != LOG_OK)
       {
-        return LOG_ERR;
+        s_writeErrors++;
+        goto fail;
       }
     }
   }
+
+  *pn = 0u;
   return LOG_OK;
+
+fail:
+  /* 已提交的 i 条留在 Flash 里；把剩余未落盘的搬到 batch 头部，下次重试 */
+  *pn = (uint16_t)(*pn - i);
+  if ((i > 0u) && (*pn > 0u))
+  {
+    memmove(recs, &recs[i], (size_t)(*pn) * sizeof(Sample_t));
+  }
+  return LOG_ERR;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -308,6 +325,7 @@ static void LoggerTask(void *argument)
     TickType_t      lastFlush   = xTaskGetTickCount();
     TickType_t      lastMeta    = xTaskGetTickCount();
     uint8_t         wr          = LOG_OK;
+    uint8_t         retries     = 0u;     /* 连续写失败次数，上限 3 次后丢弃该批 */
 
   (void)argument;
 
@@ -358,6 +376,9 @@ static void LoggerTask(void *argument)
       LOG_TR("[log] batch n=%u addr=0x%08lX\r\n",
              (unsigned)n, (unsigned long)s_wrAddr);
 
+      uint16_t before    = n;
+      uint16_t committed;
+
       wr = LOG_ERR;                    /* 默认按失败处理；写成功再改回 */
       if (Log_Lock() != 0u)
       {
@@ -366,29 +387,38 @@ static void LoggerTask(void *argument)
           (void)xEventGroupSetBits(sysEvents, EVT_FLASH_BUSY);
         }
 
-        wr = Log_WriteBatchLocked(batch, n);
+        /* n 会被改成"仍待写"的条数；已落盘的记录才计入 recsSinceMeta */
+        wr = Log_WriteBatchLocked(batch, &n);
+        committed = (uint16_t)(before - n);
+        recsSinceMeta += committed;
+
         if (wr == LOG_OK)
         {
-          recsSinceMeta += n;
+          retries = 0u;
+          if (sysEvents != NULL)
+          {
+            /* 一次成功写盘后解除粘滞位，避免偶发故障让 UI 长期处于降级状态 */
+            (void)xEventGroupClearBits(sysEvents, EVT_LOG_FULL);
+          }
+
+          /* 检查点：每 256 条或 30s 提交一次（只在整批成功时提交） */
+          if ((recsSinceMeta >= LOG_META_COMMIT_RECORDS) ||
+              ((TickType_t)(now - lastMeta) >= pdMS_TO_TICKS(LOG_META_COMMIT_MS)))
+          {
+            if (Log_CommitMetaLocked() == LOG_OK)
+            {
+              recsSinceMeta = 0u;
+              lastMeta = xTaskGetTickCount();
+            }
+            else if (sysEvents != NULL)
+            {
+              (void)xEventGroupSetBits(sysEvents, EVT_LOG_FULL);
+            }
+          }
         }
         else if (sysEvents != NULL)
         {
           (void)xEventGroupSetBits(sysEvents, EVT_LOG_FULL);
-        }
-
-        /* 检查点：每 256 条或 30s 提交一次 */
-        if ((recsSinceMeta >= LOG_META_COMMIT_RECORDS) ||
-            ((TickType_t)(now - lastMeta) >= pdMS_TO_TICKS(LOG_META_COMMIT_MS)))
-        {
-          if (Log_CommitMetaLocked() == LOG_OK)
-          {
-            recsSinceMeta = 0u;
-            lastMeta = xTaskGetTickCount();
-          }
-          else if (sysEvents != NULL)
-          {
-            (void)xEventGroupSetBits(sysEvents, EVT_LOG_FULL);
-          }
         }
 
         if (sysEvents != NULL)
@@ -398,18 +428,25 @@ static void LoggerTask(void *argument)
         Log_Unlock();
       }
 
-      n = 0u;
       lastFlush = xTaskGetTickCount();
 
       LOG_TR("[log] batch %s err=%u next=0x%08lX\r\n",
              (wr == LOG_OK) ? "ok" : "FAIL",
              (unsigned)s_writeErrors, (unsigned long)s_wrAddr);
 
-      /* 写失败/抢锁超时：主动让出 CPU。LoggerTask 优先级 2，
-         HealthTask 只有 1；如果不让出，Flash 故障会让健康任务永远跑不到，
-         表现为 IWDG 反复复位（而不是报错）。 */
+      /* 写失败/抢锁超时：主动让出 CPU。HealthTask 优先级 7 可以抢占，
+         这里退避主要是避免 QSPI 持续报错时高频重试占满 CPU，
+         给 CON/MON 等低优先级任务留出运行时间。 */
       if (wr != LOG_OK)
       {
+        retries++;
+        if (retries >= 3u)
+        {
+          /* Flash 长期不可用时放弃这批，避免批次被无限占住 */
+          n = 0u;
+          retries = 0u;
+          s_writeErrors++;
+        }
         vTaskDelay(pdMS_TO_TICKS(200));
       }
     }

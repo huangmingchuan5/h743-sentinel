@@ -55,6 +55,40 @@ int fputc(int ch, FILE *f)
 }
 
 /* -------------------------------------------------------------------------- */
+/* 致命错误专用输出（configASSERT / 栈溢出钩子 / 堆失败钩子）
+ * 不调用 HAL、不用超时、不依赖中断与互斥量：直接轮询 USART1 的 TXE 位后写 TDR。
+ * 普通路径仍走 fputc / Uart_Printf，这里只给"世界已停止"时兜底。            */
+#define UART_PANIC_TXE_BIT   (1UL << 7u)    /* USART_ISR.TXE / TXFNF，bit 7 */
+#define UART_PANIC_SPINS     0x1000000u     /* 有界自旋，UART 未就绪也不挂死 */
+
+void Uart_PanicPutChar(char c)
+{
+  uint32_t guard = UART_PANIC_SPINS;
+  USART_TypeDef *u = USART1;
+
+  while (((u->ISR & UART_PANIC_TXE_BIT) == 0u) && (guard != 0u))
+  {
+    guard--;
+  }
+  if (guard != 0u)
+  {
+    u->TDR = (uint8_t)c;
+  }
+}
+
+void Uart_PanicPuts(const char *s)
+{
+  if (s == NULL)
+  {
+    return;
+  }
+  while (*s != '\0')
+  {
+    Uart_PanicPutChar(*s++);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* TX：RTOS 版本                                                              */
 
 void Uart_RtosInit(void)

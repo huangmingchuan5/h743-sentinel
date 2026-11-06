@@ -12,7 +12,7 @@
 | 位置 | `FreeRTOS/src/`、`FreeRTOS/include/`、`FreeRTOS/port/` |
 | 版权 | Copyright (C) 2016 Real Time Engineers Ltd. / FreeRTOS.org |
 | 许可 | **GNU GPL v2.0 + FreeRTOS exception**（`GPL-2.0 WITH FreeRTOS-exception`） |
-| 全文 | `LICENSES/GPL-2.0.txt`、`LICENSES/FreeRTOS-exception.txt` |
+| 许可证文本 | GPLv2 全文：`LICENSES/GPL-2.0.txt`；例外条款：`LICENSES/FreeRTOS-exception.txt` 是内核源文件头部声明的逐字摘录 + 官方链接说明，**不是一份独立的例外条款全文** |
 | 来源 | https://www.freertos.org/ |
 
 > 注意：V9.0.0 采用 GPLv2 + exception，**不是 MIT**（FreeRTOS 自 V10.0.0 起才改为 MIT）。

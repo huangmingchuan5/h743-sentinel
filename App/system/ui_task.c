@@ -88,16 +88,16 @@ static void UiTask(void *argument)
   uint8_t    keyPending  = 0u;
   uint8_t    alarmPrev   = 0u;
   uint16_t   buzzPhase   = 0u;
+  TickType_t lastWake    = xTaskGetTickCount();   /* 固定 50 ms 节拍 */
 
   (void)argument;
 
   for (;;)
   {
-    EventBits_t bits = xEventGroupWaitBits(sysEvents,
-                                           EVT_ALARM_ANY | EVT_FLASH_BUSY |
-                                           EVT_LOG_FULL | EVT_SAMPLING_PAUSED,
-                                           pdFALSE, pdFALSE,
-                                           pdMS_TO_TICKS(UI_PERIOD_MS));
+    /* 非阻塞读事件位：xEventGroupWaitBits 的 pdFALSE/pdFALSE 组合在任一粘滞位
+       （报警锁存、EVT_LOG_FULL）置位时会立刻返回，导致 prio4 的 UiTask 忙转，
+       饿死 CON/LOG/MON/TmrSvc，最终 HealthTask 停喂 IWDG 形成复位死循环。 */
+    EventBits_t bits = (sysEvents != NULL) ? xEventGroupGetBits(sysEvents) : 0u;
     TickType_t now   = xTaskGetTickCount();
     uint8_t    alarm = Alarm_IsActive();
 
@@ -162,6 +162,10 @@ static void UiTask(void *argument)
     }
 
     Health_Report(HEALTH_UI);
+
+    /* 每轮无条件阻塞一次：按键仍由 ulTaskNotifyTake(...,0) 在本轮内轮询，
+       响应最多晚一个 50 ms 节拍。 */
+    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(UI_PERIOD_MS));
   }
 }
 

@@ -61,7 +61,6 @@ static const char *I2c_AddrName(uint8_t addr7);
 static void        Cmd_Sensor(const char *arg);
 static void        Cmd_Live(const char *arg);
 static void        Cmd_Time(const char *arg);
-static void        Cmd_Qtest(const char *arg);
 static void        Cmd_Alarm(const char *arg);
 static void        Cmd_Cfg(const char *arg);
 static void        Cmd_Status(const char *arg);
@@ -178,7 +177,6 @@ static void Help_Print(void)
   Uart_Printf("  sensor                          one-shot read of ALS/PS/accelerometer\r\n");
   Uart_Printf("  live [n]                        print the latest 20Hz sample (n times)\r\n");
   Uart_Printf("  time [set YYYY-MM-DD hh:mm:ss]  show / set the RTC calendar\r\n");
-  Uart_Printf("  qtest                           QSPI 32MB R/W test at the 16MB boundary\r\n");
   Uart_Printf("  alarm [clear|mute|unmute]       show / control the alarm\r\n");
   Uart_Printf("  cfg [show|save|load|reset|...]  configuration (thr, rate)\r\n");
   Uart_Printf("  status                          health / reset / alarm / log summary\r\n");
@@ -374,6 +372,10 @@ static void Cmd_Dump(const char *arg)
 
   for (done = 0u; done < count; )
   {
+    /* dump all 可能持续很久；长命令内必须持续报活，否则 HEALTH_GAP_CON(2500ms)
+       会判定 ConsoleTask 失联并停喂 IWDG。只在分块正常推进处刷，不掩盖真卡死。 */
+    Health_Report(HEALTH_CON);
+
     uint32_t n = count - done;
     uint32_t k;
     uint8_t  st;
@@ -565,6 +567,9 @@ static void Cmd_Live(const char *arg)
 
   for (i = 0u; i < n; i++)
   {
+    /* live 200 约 20s，长命令内必须持续报活（HEALTH_GAP_CON = 2500ms） */
+    Health_Report(HEALTH_CON);
+
     Sample_t s;
     uint32_t age = 0u;
     char     tsbuf[24];
@@ -719,78 +724,8 @@ static void Cmd_Time(const char *arg)
   Uart_Printf("ERR usage: time | time set YYYY-MM-DD hh:mm:ss | time clear\r\n");
 }
 
-/* qtest：QSPI 32MB 寻址标定——在 16MB 边界附近取 4 个地址做"擦-写-读回"。
-   注意：会擦除这 4 个 4KB 扇区（都在日志区之外，不影响已有日志）。 */
-static void Cmd_Qtest(const char *arg)
-{
-  static const uint32_t addrs[4] =
-  {
-    0x00F00000u,   /* 15MB：第一 bank 内 */
-    0x00FFF000u,   /* 16MB 边界的前一扇区 */
-    0x01000000u,   /* 16MB 边界后的第一扇区 */
-    0x01800000u    /* 24MB：第二 bank 内 */
-  };
-  uint8_t  wr[FLASH_PAGE_SIZE];
-  uint8_t  rd[FLASH_PAGE_SIZE];
-  uint8_t  k;
-  uint16_t i;
-
-  (void)arg;
-
-  Uart_Printf("qtest: erase+write+readback @ 4 addresses (~2-3 s)\r\n");
-
-  for (k = 0u; k < 4u; k++)
-  {
-    uint32_t a = addrs[k];
-    uint8_t  st;
-
-    for (i = 0u; i < FLASH_PAGE_SIZE; i++)
-    {
-      wr[i] = (uint8_t)((uint16_t)i ^ 0xA5u);
-    }
-
-    st = Flash_EraseSector(a);
-    if (st != FLASH_OK)
-    {
-      Uart_Printf("  0x%08lX  erase FAIL (%u)\r\n", (unsigned long)a, (unsigned)st);
-      continue;
-    }
-
-    st = Flash_PageWrite(a, wr, FLASH_PAGE_SIZE);
-    if (st != FLASH_OK)
-    {
-      Uart_Printf("  0x%08lX  write FAIL (%u)\r\n", (unsigned long)a, (unsigned)st);
-      continue;
-    }
-
-    st = Flash_Read(a, rd, FLASH_PAGE_SIZE);
-    if (st != FLASH_OK)
-    {
-      Uart_Printf("  0x%08lX  read FAIL (%u)\r\n", (unsigned long)a, (unsigned)st);
-      continue;
-    }
-
-    for (i = 0u; i < FLASH_PAGE_SIZE; i++)
-    {
-      if (rd[i] != wr[i])
-      {
-        break;
-      }
-    }
-
-    if (i == FLASH_PAGE_SIZE)		//说明全部匹配，不然上面break
-    {
-      Uart_Printf("  0x%08lX  OK\r\n", (unsigned long)a);
-    }
-    else
-    {
-      Uart_Printf("  0x%08lX  MISMATCH at +%u (wrote 0x%02X, read 0x%02X)\r\n",
-                  (unsigned long)a, (unsigned)i, (unsigned)wr[i], (unsigned)rd[i]);
-    }
-  }
-
-  Uart_Printf("qtest: done\r\n");
-}
+/* QSPI 边界自检命令已从控制台移除：原测试扇区与日志数据环重叠，
+   擦写会破坏已有日志并使 RAM 状态与 Flash 不一致，且调用时未持有 flashMutex。 */
 
 /* ---- 报警 / 配置 / 状态 / 看门狗 命令 ---- */
 
@@ -1062,10 +997,6 @@ static void Dispatch(char *cmd, char *arg)
   else if (Str_EqualNoCase(cmd, "time") != 0u)
   {
     Cmd_Time(arg);
-  }
-  else if (Str_EqualNoCase(cmd, "qtest") != 0u)
-  {
-    Cmd_Qtest(arg);
   }
   else if (Str_EqualNoCase(cmd, "alarm") != 0u)
   {

@@ -282,6 +282,13 @@ int main(void)
   /* Step 8：健康监控 + IWDG（所有任务正常才喂狗） */
   Health_Start();
 
+  /* 前面那次 __set_BASEPRI(0) 之后又创建了一批 RTOS 对象（xTaskCreate、
+     xEventGroupCreate、xQueueCreate、xSemaphoreCreateMutex、xTimerCreate...）。
+     调度器启动前 uxCriticalNesting 是哨兵 0xaaaaaaaa，taskEXIT_CRITICAL 不会清
+     BASEPRI；此处再清一次，保证启动调度器前 TIM7/USART1/EXTI 中断全开、
+     HAL_GetTick() 正常递增，不再只依赖 SVC_Handler 里的兜底。 */
+  __set_BASEPRI(0u);
+
   printf("rtos   : starting scheduler...\r\n");
   vTaskStartScheduler();		//创建IdleTask和软件定时器任务
 

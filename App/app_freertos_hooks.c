@@ -15,14 +15,20 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include <stdio.h>
+
+/* 致命错误专用输出：直接轮询 USART1 的 TDR，不依赖 HAL 句柄、中断、
+   HAL_GetTick 超时或 RTOS 互斥量；可在关中断 / 调度器启动前 / ISR 上下文使用。
+   正常路径的 printf 仍走 bsp_uart.c 的重定向，这里只在"世界已停止"时兜底。 */
+extern void Uart_PanicPuts(const char *s);
 
 /* 栈溢出钩子：内核在上下文切换时检测到某任务栈越界后调用（pcTaskName 就是肇事任务） */
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
   (void)xTask;
-  taskDISABLE_INTERRUPTS();                              /* 已经出乱子，先停世界 */
-  printf("\r\n!! STACK OVERFLOW: %s\r\n", pcTaskName);   /* 尽力打印（阻塞串口） */
+  taskDISABLE_INTERRUPTS();                    /* 已经出乱子，先停世界 */
+  Uart_PanicPuts("\r\n!! STACK OVERFLOW: ");
+  Uart_PanicPuts(pcTaskName);
+  Uart_PanicPuts("\r\n");
   for (;;) { }
 }
 
@@ -30,6 +36,6 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 void vApplicationMallocFailedHook(void)
 {
   taskDISABLE_INTERRUPTS();
-  printf("\r\n!! MALLOC FAILED (heap exhausted)\r\n");
+  Uart_PanicPuts("\r\n!! MALLOC FAILED (heap exhausted)\r\n");
   for (;;) { }
 }

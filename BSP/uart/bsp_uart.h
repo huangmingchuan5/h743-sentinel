@@ -35,4 +35,10 @@ void Uart_Write(const void *buf, uint16_t len);
 void Uart_Putc(uint8_t c);
 void Uart_Printf(const char *fmt, ...);
 
+/** 致命错误专用：直接轮询 USART1 的 TXE 后写 TDR，逐字节输出。
+ *  不调用 HAL、不使用超时、不依赖中断或互斥量，可在关中断 / 调度器启动前 / ISR 上下文使用。
+ *  FreeRTOSConfig.h 的 configASSERT 与 app_freertos_hooks.c 的两个钩子走这条路。 */
+void Uart_PanicPutChar(char c);
+void Uart_PanicPuts(const char *s);
+
 #endif /* __BSP_UART_H */

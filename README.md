@@ -149,7 +149,6 @@ I2C4 (共享总线, i2cMutex)
 | `status` | 健康、复位原因、报警、日志、RTC 一屏 |
 | `wd test <1..60>` | 停止喂狗 s 秒（约 2 s 后 IWDG 复位，用于验收） |
 | `logpause on\|off` | 暂停/恢复日志消费（灌满队列，验证 evtQueue 优先级） |
-| `qtest` | QSPI 32 MB 边界读写测试（0x00F00000 / 0x01800000 附近） |
 
 ---
 
@@ -176,7 +175,7 @@ FreeRTOS/   内核 V9.0.0：src / include / port(RVDS ARM_CM7) / heap_4
 User/       FreeRTOSConfig.h
 docs/       移植施工指南、任务设计、日志格式、验收清单
 images/     架构图
-LICENSES/   第三方许可证全文
+LICENSES/   GPLv2 / BSD-3-Clause / Apache-2.0 全文；FreeRTOS 例外条款为摘录与说明
 ```
 
 ---

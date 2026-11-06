@@ -80,9 +80,18 @@
     extern uint32_t SystemCoreClock;
 #endif
 
-//断言
-#define vAssertCalled(char,int)   do { printf("Error:%s,%d\r\n",char,int); __disable_irq(); for(;;){} } while(0)
-#define configASSERT(x) if((x)==0) vAssertCalled(__FILE__,__LINE__)
+//断言：致命错误专用输出路径，实现在 BSP/uart/bsp_uart.c
+// 不能用 printf：它会走 HAL_UART_Transmit，超时依赖 TIM7 中断，而断言可能发生在
+// ISR / 关中断上下文，printf 会永久卡死，把故障现场一起丢掉。
+// 先关中断，再用不依赖 HAL 句柄与中断的轮询输出打遗言。
+extern void Uart_PanicPuts(const char *s);
+#define vAssertCalled(f,l)   do { __disable_irq(); \
+                                  Uart_PanicPuts("\r\n!! ASSERT "); \
+                                  Uart_PanicPuts(f); \
+                                  Uart_PanicPuts("\r\n"); \
+                                  (void)(l); \
+                                  for(;;){} } while(0)
+#define configASSERT(x) do { if ((x) == 0) { vAssertCalled(__FILE__, __LINE__); } } while (0)
 
 /************************************************************************
  *               FreeRTOS基础配置配置选项 
