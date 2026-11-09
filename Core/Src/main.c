@@ -388,7 +388,7 @@ static void LedTask(void *argument)
 /**
   * @brief  Step 3 验证任务②：运行监视。
   *         每 30 s 打印 FreeRTOS tick / HAL tick 及各自增量、堆水位、任务列表。
-  *         两个 tick 增量应同步 ≈3000（G1 的"增量对比"校验就靠这行输出）。
+  *         两个 tick 增量应同步 ≈30000（G1 的"增量对比"校验就靠这行输出）。
   *         栈 256 word = 1 KB（printf / vTaskList 的格式化比较吃栈）。
   *         优先级 2：与 LedTask 同级 —— 靠时间片轮转共享 CPU，长打印不会独占。
   */
@@ -426,10 +426,10 @@ static void MonTask(void *argument)
     Uart_Write(listBuf, (uint16_t)strlen(listBuf));
     Uart_Printf("\r\n");
 
-    Health_Report(HEALTH_MON);				//6
-    /* 注意：本周期必须小于 App/system/health.c 里的 HEALTH_GAP_MON（默认 5 s），
-       否则 HealthTask 会认为 MON 已卡死而停止喂狗。 */
-    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(3000));
+    Health_Report(HEALTH_MON);
+    /* 本周期必须小于 App/system/health.c 的 HEALTH_GAP_MON（35 s），
+       否则 HealthTask 会认为 MON 卡死而停止喂狗；改周期时两处必须同步。 */
+    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(30000));
   }
 }
 

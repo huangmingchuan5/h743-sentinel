@@ -70,7 +70,7 @@ I2C4 (共享总线, i2cMutex)
 | `HLTH` | 7 | 256 | 1 s | 汇总 7 个任务的进度判据，全部合格才刷新 IWDG（2 s） |
 | `Tmr Svc` | 2 | 512 | — | 软件定时器服务：报警 30 s 自动静音 |
 
-> 栈水位可直接看 `MON` 任务每 3 s 打印的 `vTaskList`（Stack 列即高水位，单位 word）；
+> 栈水位可直接看 `MON` 任务每 30 s 打印的 `vTaskList`（Stack 列即高水位，单位 word）；
 > 30 min 采样丢点统计用 `status` 的 `drop=` 回填（见[路线图](#路线图)）。
 
 ### 日志层（Step 6）

@@ -22,8 +22,7 @@
 #define HEALTH_GAP_CON    2500u
 #define HEALTH_GAP_LOG    6000u
 #define HEALTH_GAP_LED    2500u
-#define HEALTH_GAP_MON    5000u    /* MonTask 默认 3 s 打印一次，留 2 s 余量；
-                                      若改大 MonTask 周期，必须同步改大这里 */
+#define HEALTH_GAP_MON    35000u   /* MonTask 每 30 s 打印一次，留 5 s 余量 */
 
 #if (HEALTH_IWDG_ENABLE != 0)
 static IWDG_HandleTypeDef s_hiwdg;

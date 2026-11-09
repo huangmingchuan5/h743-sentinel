@@ -14,19 +14,6 @@
 #include "health.h"
 #include <string.h>
 
-/* 写盘过程跟踪：1 = 串口打印每一步（定位 QSPI/日志问题用），量产改 0。
-   打印本身会占用 UART 互斥量，但只在每批（≥2s）打十来行，调试够用。 */
-#ifndef LOG_TRACE
-#define LOG_TRACE   1
-#endif
-
-#if (LOG_TRACE != 0)
-#include "bsp_uart.h"
-#define LOG_TR(...)   Uart_Printf(__VA_ARGS__)
-#else
-#define LOG_TR(...)   do { } while (0)
-#endif
-
 #define LOG_META_MAGIC    0x534E5431u   /* "SNT1" */
 #define LOG_META_VERSION  1u
 
@@ -232,14 +219,11 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t *pn)
     /* 进入新扇区：先擦除回收（该扇区是最旧的数据） */
     if ((addr % FLASH_ERASE_SIZE) == 0u)
     {
-      LOG_TR("[log] erase 0x%08lX ...\r\n", (unsigned long)addr);
       if (Flash_EraseSector(addr) != FLASH_OK)
       {
         s_writeErrors++;
-        LOG_TR("[log] erase FAIL\r\n");
         goto fail;
       }
-      LOG_TR("[log] erase ok\r\n");
     }
 
     /* 一次页写不跨页；32B 记录天然对齐，不会切到半条 */
@@ -265,22 +249,17 @@ static uint8_t Log_WriteBatchLocked(Sample_t *recs, uint16_t *pn)
                                 (uint32_t)(LOG_RECORD_SIZE - 2u));
       }
 
-      LOG_TR("[log] page 0x%08lX len=%u ...\r\n",
-             (unsigned long)addr, (unsigned)room);
       if (Flash_PageWrite(addr, (uint8_t *)&recs[i], room) != FLASH_OK)
       {
         s_writeErrors++;
-        LOG_TR("[log] page write FAIL\r\n");
         goto fail;
       }
       if ((Flash_Read(addr, tmp, room) != FLASH_OK) ||
           (memcmp(tmp, (const uint8_t *)&recs[i], room) != 0))
       {
         s_writeErrors++;
-        LOG_TR("[log] page readback MISMATCH\r\n");
         goto fail;
       }
-      LOG_TR("[log] page ok\r\n");
 
       /* 只有页写 + 读回都成功，才把全局状态推进到这一页 */
       s_seqNext   = seq;
@@ -320,17 +299,14 @@ fail:
 static void LoggerTask(void *argument)
 {
   static Sample_t batch[LOG_BATCH_MAX];   /* 1KB，放 BSS 不占任务栈 */
-    uint16_t        n           = 0u;
-    uint32_t        recsSinceMeta = 0u;
-    TickType_t      lastFlush   = xTaskGetTickCount();
-    TickType_t      lastMeta    = xTaskGetTickCount();
-    uint8_t         wr          = LOG_OK;
-    uint8_t         retries     = 0u;     /* 连续写失败次数，上限 3 次后丢弃该批 */
+  uint16_t        n           = 0u;
+  uint32_t        recsSinceMeta = 0u;
+  TickType_t      lastFlush   = xTaskGetTickCount();
+  TickType_t      lastMeta    = xTaskGetTickCount();
+  uint8_t         wr          = LOG_OK;
+  uint8_t         retries     = 0u;     /* 连续写失败次数，上限 3 次后丢弃该批 */
 
   (void)argument;
-
-  LOG_TR("[log] task start, stack free=%u\r\n",
-         (unsigned)uxTaskGetStackHighWaterMark(NULL));
 
   for (;;)
   {
@@ -373,9 +349,6 @@ static void LoggerTask(void *argument)
         ((n > 0u) &&
          ((TickType_t)(now - lastFlush) >= pdMS_TO_TICKS(LOG_FLUSH_TIMEOUT_MS))))
     {
-      LOG_TR("[log] batch n=%u addr=0x%08lX\r\n",
-             (unsigned)n, (unsigned long)s_wrAddr);
-
       uint16_t before    = n;
       uint16_t committed;
 
@@ -429,10 +402,6 @@ static void LoggerTask(void *argument)
       }
 
       lastFlush = xTaskGetTickCount();
-
-      LOG_TR("[log] batch %s err=%u next=0x%08lX\r\n",
-             (wr == LOG_OK) ? "ok" : "FAIL",
-             (unsigned)s_writeErrors, (unsigned long)s_wrAddr);
 
       /* 写失败/抢锁超时：主动让出 CPU。HealthTask 优先级 7 可以抢占，
          这里退避主要是避免 QSPI 持续报错时高频重试占满 CPU，
